@@ -1,0 +1,22 @@
+name: Validate app demos
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.11.0
+      - run: node scripts/install-all.mjs
+      - run: node scripts/build-all.mjs

@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "apps": [
+    {
+      "slug": "flow",
+      "title": "流",
+      "repository": "https://github.com/akdddddcccc/flow-app.git",
+      "branch": "main",
+      "path": "apps/flow",
+      "publicPath": "/flow/",
+      "buildOutput": "dist",
+      "packageManager": "pnpm@10.34.5",
+      "defaultOrientation": "portrait",
+      "portraitFrame": {
+        "width": 390,
+        "height": 844
+      },
+      "landscapeFrame": {
+        "width": 844,
+        "height": 390
+      },
+      "embedQuery": "embed=portfolio",
+      "portfolioProjectKey": "flow"
+    }
+  ]
+}

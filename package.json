@@ -1,0 +1,11 @@
+{
+  "name": "portfolio-app-demos",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "install:apps": "node scripts/install-all.mjs",
+    "build": "node scripts/build-all.mjs",
+    "validate": "node scripts/validate-registry.mjs"
+  }
+}

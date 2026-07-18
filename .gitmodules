@@ -1,0 +1,4 @@
+[submodule "apps/flow"]
+	path = apps/flow
+	url = https://github.com/akdddddcccc/flow-app.git
+	branch = main

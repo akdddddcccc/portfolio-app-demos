@@ -1,0 +1,37 @@
+name: Sync linked app repositories
+
+on:
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-linked-apps
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - name: Advance linked apps to their configured branches
+        run: |
+          git submodule sync --recursive
+          git submodule update --remote --recursive
+      - name: Commit updated app pointers
+        run: |
+          if git diff --quiet --submodule=short; then
+            echo "All linked apps are current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .gitmodules apps
+          git commit -m "同步 App 最新版本"
+          git push origin HEAD:main

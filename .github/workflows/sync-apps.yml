@@ -1,6 +1,8 @@
 name: Sync linked app repositories
 
 on:
+  repository_dispatch:
+    types: [flow-app-updated]
   schedule:
     - cron: "17,47 * * * *"
   workflow_dispatch:
@@ -16,7 +18,7 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           submodules: recursive

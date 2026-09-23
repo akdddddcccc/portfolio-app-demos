@@ -19,4 +19,5 @@ jobs:
         with:
           node-version: 22.11.0
       - run: node scripts/install-all.mjs
+      - run: npm test
       - run: node scripts/build-all.mjs

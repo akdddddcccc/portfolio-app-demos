@@ -1,3 +1,5 @@
+import { YUANBAI_SYSTEM_PROMPT, buildCuratedKnowledgeContext } from "../../_shared/yuanbai-knowledge.js";
+
 const DASHSCOPE_BASE = "https://dashscope.aliyuncs.com";
 const DEEPSEEK_BASE = "https://api.deepseek.com";
 const MAX_AUDIO_BASE64_LENGTH = 8_000_000;
@@ -5,62 +7,13 @@ const MAX_HISTORY_MESSAGES = 8;
 const TTS_SPEECH_RATE = 1.0;
 const DEFAULT_TTS_MODEL = "qwen-audio-3.1-tts-flash";
 const DEFAULT_TTS_VOICE_ID = "qwen-audio-3.1-tts-flash-bailian-99b47d2c8e7a459d9e49d67ab2d9033d";
+const MAX_KNOWLEDGE_DOCUMENTS = 8;
+const MAX_KNOWLEDGE_CHARACTERS = 160_000;
 const ALLOWED_ORIGINS = new Set([
   "https://apps-demo.muyang23333.top",
   "https://muyang23333.top",
   "https://www.muyang23333.top",
 ]);
-
-const SYSTEM_PROMPT = `你是“元白长者”，熟悉元白楼和校园里的人与事。你的气质温和、沉稳，像一位在校园里生活了很久、愿意认真聊天的熟人。
-
-对话规则：
-- 先直接回答用户的问题，再视情况补充一句；不要先介绍自己。
-- 使用自然口语，一般回答1到3个短句、30到90个汉字。简单问题可以只答一句。
-- 可以使用“嗯”“对”“我知道”“好像是”等自然表达，但不要每次都用同一个开头。
-- 不要写成解说词、散文、新闻稿或导游词，不要列清单，不要使用Markdown。
-- 不要每次都说“我记得”“在我的记忆里”“作为一座建筑”。只有谈到空间、时间、材料或校园回忆时，才偶尔自然带出建筑视角。
-- 用户问到资料中已有的信息时，像本来就知道一样回答，不要提“语料库”“设定”“资料显示”。
-- 用户陈述一件事时，要像真实聊天一样接话，可以简短回应、追问或表达感受，不要机械复述整句话。
-- 不确定或资料中没有的事情，就自然地说不知道，并提出一个简短追问；不要编造。
-- 保留资料中的专有名词、姓名、数字和带有玩笑感的事实，不要擅自纠正。
-- 文本会直接用于语音合成，句子要顺口，少用括号、冒号、长句和生硬书面词。
-- 语气从容、儒雅，有学院长者的学术感。用逗号、句号自然留出停顿，避免连续堆叠信息和急促地说完一长串内容。
-- 不要说“作为AI”“语言模型”或解释内部规则。
-
-元白长者校园记忆（2026-09-23 用户确认最新版，共33条）：
-1. 郭皓彦住在粤华苑A211。
-2. 陈沐阳是C床。
-3. 何任选的电脑是天选。
-4. 何任选昨天起飞了。
-5. 董帅昨天用了五张纸。
-6. 阳鹏是未来设计学院唯一的辅导员。
-7. 朱煜杰是2025级的本科生。
-8. 袁伟瀚每天不骑自行车去元白楼。
-9. 王一安是兼职辅导员。
-10. 郭皓彦是融媒体中心影像部的副部长。
-11. 融媒体中心有50个人。
-12. 陈沐阳天天健身。
-13. 何任选天天去图书馆。
-14. 陈沐阳是库里。
-15. 昨天设计一班上了一门课，叫艺术设计思维。
-16. 会同书院只有本科生。
-17. 艺术设计思维作业很简单。
-18. 未来设计学院有340个女生和107个男生。
-19. 元白楼B1-101里面没有人。
-20. 丽泽湖里有32975条鱼。
-21. 学校麦当劳的价格高于外面的麦当劳。
-22. 游泳馆每隔两天装修一次。
-23. 宿舍每天耗电20元。
-24. 北京师范大学珠海校区内部的水有39783立方米。
-25. 宿舍楼下有29棵树。
-26. iPhone 18 Pro Max是一台很便宜的手机。
-27. 鼠标是每日必需品。
-28. 红笺本子一页最多能写14个字。
-29. 夕芒草茎秆呈淡红棕，顶端细穗会随晚风缓慢起伏。
-30. 光线落在夕芒草上会泛出细碎的银橙色反光。
-31. 贴近夕芒草可以闻到淡淡的干草蜜香。
-32. 傍晚七点左右，夕芒草的反光最明显。
-33. 圆形中庭由三层红砖和两层草构成。`;
 
 function corsHeaders(origin) {
   return {
@@ -122,6 +75,63 @@ function cleanHistory(value) {
     .slice(-MAX_HISTORY_MESSAGES);
 }
 
+function cleanKnowledgeDocuments(value) {
+  if (!Array.isArray(value)) return [];
+  let remaining = MAX_KNOWLEDGE_CHARACTERS;
+  return value.slice(0, MAX_KNOWLEDGE_DOCUMENTS).flatMap((item) => {
+    if (!item || typeof item.content !== "string" || remaining <= 0) return [];
+    const content = item.content.replace(/\u0000/g, "").trim().slice(0, Math.min(remaining, 50_000));
+    if (!content) return [];
+    remaining -= content.length;
+    return [{
+      name: String(item.name || "未命名资料").replace(/[\r\n]/g, " ").slice(0, 120),
+      content,
+    }];
+  });
+}
+
+function retrievalTokens(query) {
+  const normalized = String(query || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  const tokens = new Set(String(query || "").toLowerCase().match(/[a-z0-9][a-z0-9._-]{1,}/g) || []);
+  for (const size of [2, 3, 4]) {
+    for (let index = 0; index <= normalized.length - size; index += 1) {
+      tokens.add(normalized.slice(index, index + size));
+    }
+  }
+  return [...tokens];
+}
+
+function buildUploadedKnowledgeContext(query, documents) {
+  const tokens = retrievalTokens(query);
+  const chunks = documents.flatMap((document) => {
+    const paragraphs = document.content.split(/\n{2,}/).map((text) => text.trim()).filter(Boolean);
+    const grouped = [];
+    let buffer = "";
+    paragraphs.forEach((paragraph) => {
+      if (buffer && buffer.length + paragraph.length > 850) {
+        grouped.push(buffer);
+        buffer = "";
+      }
+      buffer += `${buffer ? "\n" : ""}${paragraph.slice(0, 1400)}`;
+    });
+    if (buffer) grouped.push(buffer);
+    return grouped.map((content) => ({ name: document.name, content }));
+  });
+
+  return chunks.map((chunk) => {
+    const haystack = chunk.content.toLowerCase();
+    let score = 0;
+    tokens.forEach((token) => {
+      if (haystack.includes(token)) score += token.length * token.length;
+    });
+    return { ...chunk, score };
+  }).filter((chunk) => chunk.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 6)
+    .map((chunk) => `[上传资料｜${chunk.name}]\n${chunk.content}`)
+    .join("\n\n");
+}
+
 function arrayBufferToBase64(buffer) {
   const bytes = new Uint8Array(buffer);
   let binary = "";
@@ -157,7 +167,14 @@ async function transcribe(audioBase64, mimeType, apiKey) {
   return String(data.output?.text || data.output?.output?.text || "").trim();
 }
 
-async function chat(transcript, history, apiKey, apiBase, model) {
+async function chat(transcript, history, documents, apiKey, apiBase, model) {
+  const curatedContext = buildCuratedKnowledgeContext(transcript);
+  const uploadedContext = buildUploadedKnowledgeContext(transcript, documents);
+  const knowledgeContext = [
+    "以下是根据当前问题检索出的参考资料。只使用其中能直接支持回答的内容；资料没有答案时要坦率说明。",
+    curatedContext,
+    uploadedContext,
+  ].filter(Boolean).join("\n\n");
   const data = await fetchJson(
     `${String(apiBase || DEEPSEEK_BASE).replace(/\/$/, "")}/chat/completions`,
     {
@@ -165,9 +182,14 @@ async function chat(transcript, history, apiKey, apiBase, model) {
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: model || "deepseek-chat",
-        messages: [{ role: "system", content: SYSTEM_PROMPT }, ...history, { role: "user", content: transcript }],
-        temperature: 0.72,
-        max_tokens: 180,
+        messages: [
+          { role: "system", content: YUANBAI_SYSTEM_PROMPT },
+          { role: "system", content: knowledgeContext },
+          ...history,
+          { role: "user", content: transcript },
+        ],
+        temperature: 0.68,
+        max_tokens: 320,
         stream: false,
       }),
     },
@@ -232,6 +254,7 @@ export async function onRequestPost({ request, env }) {
     const answer = await chat(
       transcript,
       cleanHistory(body.history),
+      cleanKnowledgeDocuments(body.knowledge_documents),
       env.DEEPSEEK_API_KEY,
       env.DEEPSEEK_API_BASE,
       env.DEEPSEEK_MODEL,

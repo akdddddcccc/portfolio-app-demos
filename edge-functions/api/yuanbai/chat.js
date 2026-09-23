@@ -2,7 +2,9 @@ const DASHSCOPE_BASE = "https://dashscope.aliyuncs.com";
 const DEEPSEEK_BASE = "https://api.deepseek.com";
 const MAX_AUDIO_BASE64_LENGTH = 8_000_000;
 const MAX_HISTORY_MESSAGES = 8;
-const COSYVOICE_SPEECH_RATE = 0.5;
+const TTS_SPEECH_RATE = 1.0;
+const DEFAULT_TTS_MODEL = "qwen-audio-3.1-tts-flash";
+const DEFAULT_TTS_VOICE_ID = "qwen-audio-3.1-tts-flash-bailian-99b47d2c8e7a459d9e49d67ab2d9033d";
 const ALLOWED_ORIGINS = new Set([
   "https://apps-demo.muyang23333.top",
   "https://muyang23333.top",
@@ -181,14 +183,14 @@ async function synthesize(text, apiKey, model, voice) {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: model || "cosyvoice-v3.5-flash",
+        model: model || DEFAULT_TTS_MODEL,
         input: {
           text,
-          voice: voice || "cosyvoice-v3.5-flash-bailian-b265178dc2014f888ee3e5a8e504065d",
+          voice: voice || DEFAULT_TTS_VOICE_ID,
           format: "mp3",
           sample_rate: 22050,
-          // 百炼 CosyVoice 使用 1.0 作为正常语速；0.5 是当前允许的最慢值。
-          speech_rate: COSYVOICE_SPEECH_RATE,
+          // 1.0 是正常语速；若后续想改为 0.8，只需修改文件顶部的 TTS_SPEECH_RATE。
+          speech_rate: TTS_SPEECH_RATE,
           pitch_rate: 1.0,
         },
       }),
@@ -239,8 +241,8 @@ export async function onRequestPost({ request, env }) {
     const audioBase64Result = await synthesize(
       answer,
       env.DASHSCOPE_API_KEY,
-      env.COSYVOICE_MODEL,
-      env.COSYVOICE_VOICE_ID,
+      env.YUANBAI_TTS_MODEL,
+      env.YUANBAI_TTS_VOICE_ID,
     );
 
     return jsonResponse(

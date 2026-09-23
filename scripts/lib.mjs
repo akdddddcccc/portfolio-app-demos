@@ -14,6 +14,8 @@ export function run(command, args, cwd, env = {}) {
   const result = spawnSync(command, args, {
     cwd,
     env: { ...process.env, ...env },
+    // Windows 需要通过 cmd.exe 启动 npm.cmd / npx.cmd；其他平台保持直接执行。
+    shell: process.platform === "win32",
     stdio: "inherit",
   });
 
@@ -25,17 +27,19 @@ export function run(command, args, cwd, env = {}) {
 
 export function packageManagerCommand(specification) {
   const [name, version] = specification.split("@");
+  const npx = process.platform === "win32" ? "npx.cmd" : "npx";
+  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
   if (name === "pnpm" && version) {
     return {
-      install: ["npx", ["--yes", `pnpm@${version}`, "install", "--frozen-lockfile"]],
-      build: ["npx", ["--yes", `pnpm@${version}`, "run", "build"]],
+      install: [npx, ["--yes", `pnpm@${version}`, "install", "--frozen-lockfile"]],
+      build: [npx, ["--yes", `pnpm@${version}`, "run", "build"]],
     };
   }
 
   if (name === "npm") {
     return {
-      install: ["npm", ["ci"]],
-      build: ["npm", ["run", "build"]],
+      install: [npm, ["ci"]],
+      build: [npm, ["run", "build"]],
     };
   }
 

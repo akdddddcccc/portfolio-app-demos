@@ -2,7 +2,7 @@ const DASHSCOPE_BASE = "https://dashscope.aliyuncs.com";
 const DEEPSEEK_BASE = "https://api.deepseek.com";
 const MAX_AUDIO_BASE64_LENGTH = 8_000_000;
 const MAX_HISTORY_MESSAGES = 8;
-const COSYVOICE_SPEECH_RATE = 0.8;
+const COSYVOICE_SPEECH_RATE = 0.5;
 const ALLOWED_ORIGINS = new Set([
   "https://apps-demo.muyang23333.top",
   "https://muyang23333.top",
@@ -186,7 +186,7 @@ async function synthesize(text, apiKey, model, voice) {
           voice: voice || "cosyvoice-v3.5-flash-bailian-b265178dc2014f888ee3e5a8e504065d",
           format: "mp3",
           sample_rate: 22050,
-          // 百炼 CosyVoice 使用 1.0 作为正常语速；只降低语速，不改变 voice 或音高。
+          // 百炼 CosyVoice 使用 1.0 作为正常语速；0.5 是当前允许的最慢值。
           speech_rate: COSYVOICE_SPEECH_RATE,
           pitch_rate: 1.0,
         },

@@ -2,3 +2,7 @@
 	path = apps/flow
 	url = https://github.com/akdddddcccc/flow-app.git
 	branch = main
+[submodule "apps/yuanbai"]
+	path = apps/yuanbai
+	url = https://github.com/akdddddcccc/yuanbai_agent.git
+	branch = main

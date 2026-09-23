@@ -21,6 +21,23 @@
       },
       "embedQuery": "embed=portfolio",
       "portfolioProjectKey": "flow"
+    },
+    {
+      "slug": "yuanbai",
+      "title": "元白长者",
+      "repository": "https://github.com/akdddddcccc/yuanbai_agent.git",
+      "branch": "main",
+      "path": "apps/yuanbai",
+      "publicPath": "/yuanbai/",
+      "buildOutput": "dist/client",
+      "packageManager": "npm",
+      "defaultOrientation": "landscape",
+      "landscapeFrame": {
+        "width": 1440,
+        "height": 900
+      },
+      "embedQuery": "embed=portfolio",
+      "portfolioProjectKey": "yuanbai"
     }
   ]
 }

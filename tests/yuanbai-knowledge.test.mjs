@@ -20,3 +20,10 @@ test("keeps student anecdotes labeled as internal oral material", () => {
   assert.match(context, /融媒体中心影像部副部长/);
 });
 
+test("recognizes the official Academy Cats project without inventing individual cats", () => {
+  const context = buildCuratedKnowledgeContext("学院猫是什么项目？");
+  assert.match(context, /学院猫.*纪念文创设计/);
+  assert.match(context, /三位猫学长/);
+  assert.match(context, /仍无三位个体/);
+});
+

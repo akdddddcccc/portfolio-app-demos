@@ -23,7 +23,9 @@ test("keeps student anecdotes labeled as internal oral material", () => {
 test("recognizes the official Academy Cats project without inventing individual cats", () => {
   const context = buildCuratedKnowledgeContext("学院猫是什么项目？");
   assert.match(context, /学院猫.*纪念文创设计/);
+  assert.match(context, /小灯、如意、小海绵/);
+  assert.match(context, /如意和小海绵已被收养/);
   assert.match(context, /三位猫学长/);
-  assert.match(context, /仍无三位个体/);
+  assert.match(context, /没有三位的辨认特征/);
 });
 

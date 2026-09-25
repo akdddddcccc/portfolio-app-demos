@@ -321,7 +321,9 @@ async function chat(transcript, history, documents, apiKey, apiBase, model, sear
   const curatedContext = buildCuratedKnowledgeContext(transcript);
   const uploadedContext = buildUploadedKnowledgeContext(transcript, documents);
   let webSources = [];
+  let webSearchAttempted = false;
   if (shouldUseWebSearch(transcript, searchOptions)) {
+    webSearchAttempted = true;
     try {
       webSources = await searchDeepSeek(transcript, apiKey, searchOptions);
     } catch (error) {
@@ -330,10 +332,16 @@ async function chat(transcript, history, documents, apiKey, apiBase, model, sear
     }
   }
   const webContext = formatWebSearchContext(transcript, webSources);
+  const webSearchStatus = webSearchAttempted
+    ? webSources.length
+      ? `[联网检索状态：已完成，收到${webSources.length}条可用来源]`
+      : "[联网检索状态：已发起，但当前没有收到可引用的来源；不要把本次回答说成刚刚查到网页]"
+    : "";
   const knowledgeContext = [
     "以下是根据当前问题检索出的参考资料。只使用其中能直接支持回答的内容；资料没有答案时要坦率说明。",
     curatedContext,
     uploadedContext,
+    webSearchStatus,
     webContext,
   ].filter(Boolean).join("\n\n");
   const data = await fetchJson(
@@ -359,6 +367,7 @@ async function chat(transcript, history, documents, apiKey, apiBase, model, sear
   return {
     answer: String(data.choices?.[0]?.message?.content || "").trim().replace(/^[-*#\s]+/, "").slice(0, 600),
     webSources,
+    webSearchAttempted,
   };
 }
 
@@ -451,6 +460,10 @@ export async function onRequestPost({ request, env }) {
         transcript,
         answer,
         web_sources: chatResult.webSources,
+        web_search_attempted: chatResult.webSearchAttempted,
+        web_search_enabled: env.DEEPSEEK_WEB_SEARCH_ENABLED === undefined
+          ? true
+          : envBoolean(env.DEEPSEEK_WEB_SEARCH_ENABLED),
         audio_base64: audioBase64Result,
         audio_mime_type: "audio/mpeg",
       },

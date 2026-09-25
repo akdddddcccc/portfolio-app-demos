@@ -52,6 +52,6 @@ test("does not guess when phonetic correction has multiple plausible matches", (
 });
 
 test("does not place teachers into student classes or invent unknown roster entries", () => {
-  assert.match(getSyntheticRosterFallback("高鹏院长是几班", roster), /老师不属于/);
+  assert.match(getSyntheticRosterFallback("高鹏院长是几班", roster), /老师不在这届学生里/);
   assert.match(getSyntheticRosterFallback("你知道不存在的人吗", roster), /不猜/);
 });

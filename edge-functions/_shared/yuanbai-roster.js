@@ -29,13 +29,13 @@ export function parseSyntheticRoster(content) {
   return { synthetic: true, records };
 }
 
-export function findSyntheticRosterMatches(query, roster) {
+export function findSyntheticRosterMatches(query, roster, options = {}) {
   const value = parseSyntheticRoster(roster);
   if (!value) return [];
   if (/(老师|院长|教授|导师|教师|教职工|工作人员)/.test(String(query || ""))) return [];
   const normalizedQuery = normalizeNameQuery(query);
   if (!normalizedQuery) return [];
-  const asksGender = /性别|男生|女生|男女/.test(query);
+  const asksGender = options.includeGender === true || /性别|男生|女生|男女/.test(query);
   const exactMatches = value.records.filter(({ name }) => normalizedQuery.includes(name.toLowerCase()));
   if (exactMatches.length) return exactMatches.map((record) => formatMatch(record, asksGender));
 
@@ -136,12 +136,12 @@ function editDistance(left, right) {
 
 export function getSyntheticRosterFallback(query, roster) {
   const text = String(query || "").trim();
-  if (!text) return "我没能听清你问的是谁，先不猜班级。";
+  if (!text) return "我没听清你问的是谁，先不乱猜班级。";
 
   const asksClass = /(几班|哪个班|哪一班|什么班|班级)/.test(text);
   const asksStaff = /(老师|院长|教授|导师|教师|教职工|工作人员)/.test(text);
   if (asksStaff) {
-    return asksClass ? "老师不属于这份学生分班名单，我不会把老师分到1、2、3班。" : null;
+    return asksClass ? "老师不在这届学生里，我就不把老师分到这三个班了。" : null;
   }
 
   const asksPerson = /(你知道|你认识|你认得|认识|认得|是谁|哪位)/.test(text);
@@ -149,8 +149,8 @@ export function getSyntheticRosterFallback(query, roster) {
   if (!asksClass && !/(同学|学生)/.test(text) && /(学院猫|小灯|如意|小海绵|元白楼)/.test(text)) return null;
 
   const value = parseSyntheticRoster(roster);
-  if (!value) return "我现在没能查到对应的班级，不会替谁猜一个。";
+  if (!value) return "这个名字我没对上，怕说错班级，先不猜了。";
   const matches = findSyntheticRosterMatches(text, value);
   if (matches.length) return null;
-  return "我没能把这个名字可靠地对应到班级，所以不猜。";
+  return "这个名字我没对上，怕说错班级，先不猜了。";
 }

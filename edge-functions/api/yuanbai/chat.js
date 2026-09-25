@@ -1,5 +1,4 @@
 import { YUANBAI_SYSTEM_PROMPT, buildCuratedKnowledgeContext, getCuratedStudentNameAnswer, getCuratedStudentRosterFallback } from "../../_shared/yuanbai-knowledge.js";
-import { findSyntheticRosterMatches, parseSyntheticRoster } from "../../_shared/yuanbai-roster.js";
 
 const DASHSCOPE_BASE = "https://dashscope.aliyuncs.com";
 const DEEPSEEK_BASE = "https://api.deepseek.com";
@@ -16,8 +15,6 @@ const MAX_HISTORY_MESSAGES = 8;
 const TTS_SPEECH_RATE = 0.95;
 const DEFAULT_TTS_MODEL = "qwen-audio-3.1-tts-flash";
 const DEFAULT_TTS_VOICE_ID = "qwen-audio-3.1-tts-flash-bailian-99b47d2c8e7a459d9e49d67ab2d9033d";
-const MAX_KNOWLEDGE_DOCUMENTS = 8;
-const MAX_KNOWLEDGE_CHARACTERS = 160_000;
 const ALLOWED_ORIGINS = new Set([
   "https://apps-demo.muyang23333.top",
   "https://muyang23333.top",
@@ -82,21 +79,6 @@ function cleanHistory(value) {
     .map((item) => ({ role: item.role, content: item.content.trim().slice(0, 600) }))
     .filter((item) => item.content)
     .slice(-MAX_HISTORY_MESSAGES);
-}
-
-function cleanKnowledgeDocuments(value) {
-  if (!Array.isArray(value)) return [];
-  let remaining = MAX_KNOWLEDGE_CHARACTERS;
-  return value.slice(0, MAX_KNOWLEDGE_DOCUMENTS).flatMap((item) => {
-    if (!item || typeof item.content !== "string" || remaining <= 0) return [];
-    const content = item.content.replace(/\u0000/g, "").trim().slice(0, Math.min(remaining, 50_000));
-    if (!content) return [];
-    remaining -= content.length;
-    return [{
-      name: String(item.name || "未命名资料").replace(/[\r\n]/g, " ").slice(0, 120),
-      content,
-    }];
-  });
 }
 
 const SEARCH_CUES = [
@@ -241,60 +223,6 @@ export async function searchDeepSeek(query, apiKey, options = {}) {
   }
 }
 
-function retrievalTokens(query) {
-  const normalized = String(query || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-  const tokens = new Set(String(query || "").toLowerCase().match(/[a-z0-9][a-z0-9._-]{1,}/g) || []);
-  for (const size of [2, 3, 4]) {
-    for (let index = 0; index <= normalized.length - size; index += 1) {
-      tokens.add(normalized.slice(index, index + size));
-    }
-  }
-  return [...tokens];
-}
-
-function buildUploadedKnowledgeContext(query, documents) {
-  const tokens = retrievalTokens(query);
-  const chunks = documents.flatMap((document) => {
-    const syntheticRoster = parseSyntheticRoster(document.content);
-    if (syntheticRoster) {
-      const matches = findSyntheticRosterMatches(query, syntheticRoster);
-      return matches.map((record) => ({
-        name: document.name,
-        content: `[姓名班级匹配]\n规范姓名：${record.name}\n班级：${record.class}${record.gender ? `\n记录性别：${record.gender}` : ""}`,
-      }));
-    }
-
-    const lines = document.content.split(/\r?\n/).map((text) => text.trim()).filter(Boolean);
-    const grouped = [];
-    let buffer = "";
-    lines.forEach((line) => {
-      for (let offset = 0; offset < line.length; offset += 850) {
-        const part = line.slice(offset, offset + 850);
-        if (buffer && buffer.length + part.length + 1 > 850) {
-          grouped.push(buffer);
-          buffer = "";
-        }
-        buffer += `${buffer ? "\n" : ""}${part}`;
-      }
-    });
-    if (buffer) grouped.push(buffer);
-    return grouped.map((content) => ({ name: document.name, content }));
-  });
-
-  return chunks.map((chunk) => {
-    const haystack = chunk.content.toLowerCase();
-    let score = 0;
-    tokens.forEach((token) => {
-      if (haystack.includes(token)) score += token.length * token.length;
-    });
-    return { ...chunk, score };
-  }).filter((chunk) => chunk.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 6)
-    .map((chunk) => `[上传资料｜${chunk.name}]\n${chunk.content}`)
-    .join("\n\n");
-}
-
 function arrayBufferToBase64(buffer) {
   const bytes = new Uint8Array(buffer);
   let binary = "";
@@ -330,14 +258,12 @@ async function transcribe(audioBase64, mimeType, apiKey) {
   return String(data.output?.text || data.output?.output?.text || "").trim();
 }
 
-async function chat(transcript, history, documents, apiKey, apiBase, model, searchOptions = {}) {
+async function chat(transcript, history, apiKey, apiBase, model, searchOptions = {}) {
   const curatedContext = buildCuratedKnowledgeContext(transcript);
-  const requestDocuments = [...documents];
   const rosterAnswer = getCuratedStudentNameAnswer(transcript);
   if (rosterAnswer) return { answer: rosterAnswer, webSources: [], webSearchAttempted: false };
   const rosterFallback = getCuratedStudentRosterFallback(transcript);
   if (rosterFallback) return { answer: rosterFallback, webSources: [], webSearchAttempted: false };
-  const uploadedContext = buildUploadedKnowledgeContext(transcript, requestDocuments);
   let webSources = [];
   let webSearchAttempted = false;
   if (shouldUseWebSearch(transcript, searchOptions)) {
@@ -356,9 +282,8 @@ async function chat(transcript, history, documents, apiKey, apiBase, model, sear
       : "[联网检索状态：已发起，但当前没有收到可引用的来源；不要把本次回答说成刚刚查到网页]"
     : "";
   const knowledgeContext = [
-    "以下是根据当前问题检索出的参考资料。只使用其中能直接支持回答的内容；资料没有答案时要坦率说明。",
+    "下面是与你们谈话有关的记忆和线索。直接用元白的口吻回答，不要向对方讲内部整理方式或记忆从哪里调取；记不准时坦率但自然地说出来。",
     curatedContext,
-    uploadedContext,
     webSearchStatus,
     webContext,
   ].filter(Boolean).join("\n\n");
@@ -445,7 +370,6 @@ export async function onRequestPost({ request, env }) {
     const chatResult = await chat(
       transcript,
       cleanHistory(body.history),
-      cleanKnowledgeDocuments(body.knowledge_documents),
       env.DEEPSEEK_API_KEY,
       env.DEEPSEEK_API_BASE,
       env.DEEPSEEK_MODEL,

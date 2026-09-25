@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { findSyntheticRosterMatches, getSyntheticRosterFallback } from "../edge-functions/_shared/yuanbai-roster.js";
+import { findSyntheticRosterMatches, getSyntheticRosterAnswer, getSyntheticRosterFallback } from "../edge-functions/_shared/yuanbai-roster.js";
 
 const roster = {
   synthetic: true,
@@ -15,6 +15,19 @@ test("phonetic ASR typo resolves to the canonical roster name and class", () => 
     { name: "陈沐阳", class: "26级1班" },
   ]);
   assert.equal(getSyntheticRosterFallback("陈默阳是几班", roster), null);
+});
+
+test("same-pronunciation characters resolve to the roster spelling, without exposing internal labels", () => {
+  const rosterWithZhuyu = {
+    synthetic: true,
+    records: [{ name: "朱煜杰", gender: "男", class: "26级3班" }],
+  };
+  assert.deepEqual(findSyntheticRosterMatches("你知道朱玉洁吗", rosterWithZhuyu), [
+    { name: "朱煜杰", class: "26级3班" },
+  ]);
+  const answer = getSyntheticRosterAnswer("你知道朱玉洁吗", rosterWithZhuyu);
+  assert.match(answer, /^朱煜杰在26级3班。/);
+  assert.doesNotMatch(answer, /测试|合成|记录|认识本人/);
 });
 
 test("exact names take priority and only include gender when asked", () => {
@@ -35,10 +48,10 @@ test("does not guess when phonetic correction has multiple plausible matches", (
     ],
   };
   assert.deepEqual(findSyntheticRosterMatches("陈默阳是几班", ambiguousRoster), []);
-  assert.match(getSyntheticRosterFallback("陈默阳是几班", ambiguousRoster), /不猜班级/);
+  assert.match(getSyntheticRosterFallback("陈默阳是几班", ambiguousRoster), /不猜/);
 });
 
 test("does not place teachers into student classes or invent unknown roster entries", () => {
   assert.match(getSyntheticRosterFallback("高鹏院长是几班", roster), /老师不属于/);
-  assert.match(getSyntheticRosterFallback("你知道不存在的人吗", roster), /不猜班级/);
+  assert.match(getSyntheticRosterFallback("你知道不存在的人吗", roster), /不猜/);
 });

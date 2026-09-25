@@ -1,5 +1,5 @@
 import { YUANBAI_SYSTEM_PROMPT, buildCuratedKnowledgeContext } from "../../_shared/yuanbai-knowledge.js";
-import { findSyntheticRosterMatches, getSyntheticRosterFallback, parseSyntheticRoster, YUANBAI_ROSTER_KEY } from "../../_shared/yuanbai-roster.js";
+import { findSyntheticRosterMatches, getSyntheticRosterAnswer, getSyntheticRosterFallback, parseSyntheticRoster, YUANBAI_ROSTER_KEY } from "../../_shared/yuanbai-roster.js";
 
 const DASHSCOPE_BASE = "https://dashscope.aliyuncs.com";
 const DEEPSEEK_BASE = "https://api.deepseek.com";
@@ -286,7 +286,7 @@ function buildUploadedKnowledgeContext(query, documents) {
       const matches = findSyntheticRosterMatches(query, syntheticRoster);
       return matches.map((record) => ({
         name: document.name,
-        content: `[合成名单测试资料｜synthetic: true]\n姓名：${record.name}\n班级：${record.class}${record.gender ? `\n性别：${record.gender}` : ""}`,
+        content: `[姓名班级匹配]\n规范姓名：${record.name}\n班级：${record.class}${record.gender ? `\n记录性别：${record.gender}` : ""}`,
       }));
     }
 
@@ -367,7 +367,9 @@ async function chat(transcript, history, documents, apiKey, apiBase, model, sear
       console.warn("Yuanbai shared roster unavailable", error?.message || error);
     }
   }
-  if (cloudRoster) requestDocuments.unshift({ name: "共享合成名单", content: cloudRoster });
+  if (cloudRoster) requestDocuments.unshift({ name: "姓名班级对应资料", content: cloudRoster });
+  const rosterAnswer = getSyntheticRosterAnswer(transcript, cloudRoster);
+  if (rosterAnswer) return { answer: rosterAnswer, webSources: [], webSearchAttempted: false };
   const rosterFallback = getSyntheticRosterFallback(transcript, cloudRoster);
   if (rosterFallback) return { answer: rosterFallback, webSources: [], webSearchAttempted: false };
   const uploadedContext = buildUploadedKnowledgeContext(transcript, requestDocuments);

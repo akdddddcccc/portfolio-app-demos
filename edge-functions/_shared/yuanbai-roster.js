@@ -67,6 +67,28 @@ function formatMatch(record, asksGender) {
   };
 }
 
+export function getSyntheticRosterAnswer(query, roster) {
+  const text = String(query || "").trim();
+  if (!text || /(老师|院长|教授|导师|教师|教职工|工作人员)/.test(text)) return null;
+  const asksRosterQuestion = /(你知道|你认识|你认得|认识|认得|是谁|哪位|几班|哪个班|哪一班|什么班|班级)/.test(text);
+  if (!asksRosterQuestion) return null;
+
+  const matches = findSyntheticRosterMatches(text, roster);
+  if (matches.length !== 1) return null;
+  const match = matches[0];
+  if (/性别|男生|女生|男女/.test(text)) return `名单登记的性别是${match.gender || "未记录"}。`;
+
+  const wishes = [
+    "愿以后能做出自己珍视的作品，也有机会去争取红点或 iF 这样的奖项。",
+    "未来无论走向体验设计、服务设计，还是产品管理，都祝你找到施展本领的位置。",
+    "祝你把设计这条路走得宽些：作品有回响，工作有成长，生活也留有余裕。",
+    "愿你有一天把好想法做成真正帮到人的产品；去大厂闯一闯，或者选择喜欢的团队，都很好。",
+    "红点和 iF 都可以去争取；更愿你做的事情有意思，日子过得踏实自在。",
+  ];
+  const wish = wishes[Math.floor(Math.random() * wishes.length)];
+  return `${match.name}在${match.class}。${wish}`;
+}
+
 function normalizeNameQuery(query) {
   return String(query || "").replace(/\s+/g, "").toLowerCase()
     .replace(/^(?:请问|我想问|你知道|你认识|你认得|认识|认得|知道|帮我查一下|查一下)+/u, "")
@@ -129,8 +151,8 @@ export function getSyntheticRosterFallback(query, roster) {
   if (!asksClass && !/(同学|学生)/.test(text) && /(学院猫|小灯|如意|小海绵|元白楼)/.test(text)) return null;
 
   const value = parseSyntheticRoster(roster);
-  if (!value) return "我现在没能读取到这份学生名单，不能确认班级，也不会替谁猜一个。";
+  if (!value) return "我现在没能查到对应的班级，不会替谁猜一个。";
   const matches = findSyntheticRosterMatches(text, value);
   if (matches.length) return null;
-  return "我没能把这个名字和名单中的同学可靠地对应起来，所以不猜班级。";
+  return "我没能把这个名字可靠地对应到班级，所以不猜。";
 }

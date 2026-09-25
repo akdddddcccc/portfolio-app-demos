@@ -4,7 +4,7 @@ on:
   repository_dispatch:
     types: [flow-app-updated]
   schedule:
-    - cron: "17,47 * * * *"
+  - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:

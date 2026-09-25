@@ -1,4 +1,5 @@
 import { YUANBAI_SYSTEM_PROMPT, buildCuratedKnowledgeContext } from "../../_shared/yuanbai-knowledge.js";
+import { findSyntheticRosterMatches, parseSyntheticRoster, YUANBAI_ROSTER_KEY } from "../../_shared/yuanbai-roster.js";
 
 const DASHSCOPE_BASE = "https://dashscope.aliyuncs.com";
 const DEEPSEEK_BASE = "https://api.deepseek.com";
@@ -254,15 +255,27 @@ function retrievalTokens(query) {
 function buildUploadedKnowledgeContext(query, documents) {
   const tokens = retrievalTokens(query);
   const chunks = documents.flatMap((document) => {
-    const paragraphs = document.content.split(/\n{2,}/).map((text) => text.trim()).filter(Boolean);
+    const syntheticRoster = parseSyntheticRoster(document.content);
+    if (syntheticRoster) {
+      const matches = findSyntheticRosterMatches(query, syntheticRoster);
+      return matches.map((record) => ({
+        name: document.name,
+        content: `[合成名单测试资料｜synthetic: true]\n姓名：${record.name}\n班级：${record.class}${record.gender ? `\n性别：${record.gender}` : ""}`,
+      }));
+    }
+
+    const lines = document.content.split(/\r?\n/).map((text) => text.trim()).filter(Boolean);
     const grouped = [];
     let buffer = "";
-    paragraphs.forEach((paragraph) => {
-      if (buffer && buffer.length + paragraph.length > 850) {
-        grouped.push(buffer);
-        buffer = "";
+    lines.forEach((line) => {
+      for (let offset = 0; offset < line.length; offset += 850) {
+        const part = line.slice(offset, offset + 850);
+        if (buffer && buffer.length + part.length + 1 > 850) {
+          grouped.push(buffer);
+          buffer = "";
+        }
+        buffer += `${buffer ? "\n" : ""}${part}`;
       }
-      buffer += `${buffer ? "\n" : ""}${paragraph.slice(0, 1400)}`;
     });
     if (buffer) grouped.push(buffer);
     return grouped.map((content) => ({ name: document.name, content }));
@@ -317,9 +330,18 @@ async function transcribe(audioBase64, mimeType, apiKey) {
   return String(data.output?.text || data.output?.output?.text || "").trim();
 }
 
-async function chat(transcript, history, documents, apiKey, apiBase, model, searchOptions = {}) {
+async function chat(transcript, history, documents, apiKey, apiBase, model, searchOptions = {}, rosterStore) {
   const curatedContext = buildCuratedKnowledgeContext(transcript);
-  const uploadedContext = buildUploadedKnowledgeContext(transcript, documents);
+  const requestDocuments = [...documents];
+  if (rosterStore?.get) {
+    try {
+      const cloudRoster = await rosterStore.get(YUANBAI_ROSTER_KEY);
+      if (cloudRoster) requestDocuments.unshift({ name: "共享合成名单", content: cloudRoster });
+    } catch (error) {
+      console.warn("Yuanbai shared roster unavailable", error?.message || error);
+    }
+  }
+  const uploadedContext = buildUploadedKnowledgeContext(transcript, requestDocuments);
   let webSources = [];
   let webSearchAttempted = false;
   if (shouldUseWebSearch(transcript, searchOptions)) {
@@ -443,6 +465,7 @@ export async function onRequestPost({ request, env }) {
         maxTokens: env.DEEPSEEK_SEARCH_MAX_TOKENS,
         timeoutMs: env.DEEPSEEK_SEARCH_TIMEOUT_MS,
       },
+      env.YUANBAI_ROSTER,
     );
     const answer = chatResult.answer;
     if (!answer) throw new Error("对话生成没有返回内容");

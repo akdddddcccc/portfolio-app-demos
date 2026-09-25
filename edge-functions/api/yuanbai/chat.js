@@ -16,6 +16,8 @@ const MAX_HISTORY_MESSAGES = 8;
 const TTS_SPEECH_RATE = 0.95;
 const DEFAULT_TTS_MODEL = "qwen-audio-3.1-tts-flash";
 const DEFAULT_TTS_VOICE_ID = "qwen-audio-3.1-tts-flash-bailian-99b47d2c8e7a459d9e49d67ab2d9033d";
+const DEFAULT_YUANBAI_ROSTER_URL = "http://123.56.162.88/yuanbai-data/synthetic-roster.json";
+const YUANBAI_ROSTER_FETCH_TIMEOUT_MS = 2_500;
 const MAX_KNOWLEDGE_DOCUMENTS = 8;
 const MAX_KNOWLEDGE_CHARACTERS = 160_000;
 const ALLOWED_ORIGINS = new Set([
@@ -97,6 +99,30 @@ function cleanKnowledgeDocuments(value) {
       content,
     }];
   });
+}
+
+export async function fetchSyntheticRoster(url) {
+  if (!url) return null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), YUANBAI_ROSTER_FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      redirect: "error",
+      signal: controller.signal,
+      headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+    });
+    if (!response.ok) return null;
+    const body = await response.text();
+    if (body.length > 200_000) return null;
+    const roster = parseSyntheticRoster(body);
+    return roster ? JSON.stringify(roster) : null;
+  } catch (error) {
+    console.warn("Yuanbai VPS roster unavailable", error?.message || error);
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 const SEARCH_CUES = [
@@ -330,17 +356,18 @@ async function transcribe(audioBase64, mimeType, apiKey) {
   return String(data.output?.text || data.output?.output?.text || "").trim();
 }
 
-async function chat(transcript, history, documents, apiKey, apiBase, model, searchOptions = {}, rosterStore) {
+async function chat(transcript, history, documents, apiKey, apiBase, model, searchOptions = {}, rosterStore, rosterURL) {
   const curatedContext = buildCuratedKnowledgeContext(transcript);
   const requestDocuments = [...documents];
-  if (rosterStore?.get) {
+  let cloudRoster = await fetchSyntheticRoster(rosterURL || DEFAULT_YUANBAI_ROSTER_URL);
+  if (!cloudRoster && rosterStore?.get) {
     try {
-      const cloudRoster = await rosterStore.get(YUANBAI_ROSTER_KEY);
-      if (cloudRoster) requestDocuments.unshift({ name: "共享合成名单", content: cloudRoster });
+      cloudRoster = await rosterStore.get(YUANBAI_ROSTER_KEY);
     } catch (error) {
       console.warn("Yuanbai shared roster unavailable", error?.message || error);
     }
   }
+  if (cloudRoster) requestDocuments.unshift({ name: "共享合成名单", content: cloudRoster });
   const uploadedContext = buildUploadedKnowledgeContext(transcript, requestDocuments);
   let webSources = [];
   let webSearchAttempted = false;
@@ -466,6 +493,7 @@ export async function onRequestPost({ request, env }) {
         timeoutMs: env.DEEPSEEK_SEARCH_TIMEOUT_MS,
       },
       env.YUANBAI_ROSTER,
+      env.YUANBAI_ROSTER_URL,
     );
     const answer = chatResult.answer;
     if (!answer) throw new Error("对话生成没有返回内容");

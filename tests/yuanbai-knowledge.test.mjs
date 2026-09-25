@@ -61,7 +61,7 @@ test("looks up the submitted roster locally and corrects same-sound name recogni
   const answer = getCuratedStudentNameAnswer("你知道朱玉洁吗");
   assert.match(answer, /^朱煜杰在26级3班。/);
   assert.doesNotMatch(answer, /祝你/);
-  assert.match(answer, /未来|以后|往后|将来|值得期待/u);
+  assert.match(answer, /设计|生活|红点|iF/u);
   assert.match(getCuratedStudentNameAnswer("你知道陈沐阳吗"), /^陈沐阳在26级1班。/);
   assert.match(getCuratedStudentNameAnswer("你认识郭小红吗"), /^郭小红在26级1班。/);
   assert.match(getCuratedStudentNameAnswer("你认识郭小红吗"), /她/);

@@ -1,5 +1,5 @@
 import { YUANBAI_SYSTEM_PROMPT, buildCuratedKnowledgeContext } from "../../_shared/yuanbai-knowledge.js";
-import { findSyntheticRosterMatches, parseSyntheticRoster, YUANBAI_ROSTER_KEY } from "../../_shared/yuanbai-roster.js";
+import { findSyntheticRosterMatches, getSyntheticRosterFallback, parseSyntheticRoster, YUANBAI_ROSTER_KEY } from "../../_shared/yuanbai-roster.js";
 
 const DASHSCOPE_BASE = "https://dashscope.aliyuncs.com";
 const DEEPSEEK_BASE = "https://api.deepseek.com";
@@ -368,6 +368,8 @@ async function chat(transcript, history, documents, apiKey, apiBase, model, sear
     }
   }
   if (cloudRoster) requestDocuments.unshift({ name: "共享合成名单", content: cloudRoster });
+  const rosterFallback = getSyntheticRosterFallback(transcript, cloudRoster);
+  if (rosterFallback) return { answer: rosterFallback, webSources: [], webSearchAttempted: false };
   const uploadedContext = buildUploadedKnowledgeContext(transcript, requestDocuments);
   let webSources = [];
   let webSearchAttempted = false;

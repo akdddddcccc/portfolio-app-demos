@@ -1,11 +1,40 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  fetchSyntheticRoster,
   formatWebSearchContext,
   parseSearchSources,
   searchDeepSeek,
   shouldUseWebSearch,
 } from "../edge-functions/api/yuanbai/chat.js";
+
+test("loads only schema-valid synthetic roster data from the configured server", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedURL;
+  globalThis.fetch = async (url) => {
+    requestedURL = url;
+    return new Response(JSON.stringify({
+      synthetic: true,
+      records: [{ name: "测试同学", gender: "女", class: "26级1班" }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const roster = await fetchSyntheticRoster("http://roster.example.test/synthetic-roster.json");
+    assert.equal(requestedURL, "http://roster.example.test/synthetic-roster.json");
+    assert.deepEqual(JSON.parse(roster), {
+      synthetic: true,
+      records: [{ name: "测试同学", gender: "女", class: "26级1班" }],
+    });
+
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      synthetic: true,
+      records: [{ name: "测试同学", gender: "女", class: "26级1班", student_id: "forbidden" }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+    assert.equal(await fetchSyntheticRoster("http://roster.example.test/synthetic-roster.json"), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("only sends public/current questions to web search", () => {
   assert.equal(shouldUseWebSearch("元白楼的建筑资料在哪些官网和建筑网站可以核验？"), true);

@@ -1,7 +1,5 @@
 import { pinyin } from "pinyin-pro";
 
-export const YUANBAI_ROSTER_KEY = "synthetic-roster-v1";
-
 const ALLOWED_RECORD_KEYS = new Set(["name", "gender", "class"]);
 
 export function parseSyntheticRoster(content) {

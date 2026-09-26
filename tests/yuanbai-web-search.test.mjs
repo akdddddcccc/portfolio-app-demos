@@ -12,6 +12,10 @@ test("only sends public/current questions to web search", () => {
   assert.equal(shouldUseWebSearch("请告诉我某位同学的联系方式"), false);
   assert.equal(shouldUseWebSearch("帮我把这个设计思维问题拆成观察和选择"), false);
   assert.equal(shouldUseWebSearch("协助用户调试这个项目的报错"), false);
+  assert.equal(shouldUseWebSearch("我今天做方案有点卡，陪我聊聊吧"), false);
+  assert.equal(shouldUseWebSearch("我现在有点焦虑，想找人说说话"), false);
+  assert.equal(shouldUseWebSearch("今天有没有什么设计或者AI科技方面的大新闻？"), true);
+  assert.equal(shouldUseWebSearch("最近我做项目很疲惫"), false);
   assert.equal(shouldUseWebSearch("查一下学院猫在小红书有没有公开内容"), true);
 });
 

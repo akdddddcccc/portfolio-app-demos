@@ -95,10 +95,12 @@ function cleanHistory(value) {
 }
 
 const SEARCH_CUES = [
-  "最新", "目前", "现在", "今天", "今年", "官网", "官方网站", "公开资料", "公开信息",
-  "来源", "出处", "核验", "查一下", "搜索", "小红书", "建筑网站", "元白楼", "学院猫", "猫学长",
-  "高鹏", "展览", "论坛", "项目", "课程", "设计产出", "哪一年", "谁是", "经历",
+  "官网", "官方网站", "公开资料", "公开信息", "来源", "出处", "核验",
+  "查一下", "查一查", "帮我查", "搜索", "搜一下", "联网", "小红书", "建筑网站",
+  "新闻", "大新闻", "热点", "最新消息", "最新动态", "今天有什么新消息", "今天发生了什么",
 ];
+const CURRENT_INFO_PATTERN = /(?:今天|今日|最近|近期|目前|现在|今年|本周|本月).{0,24}(?:消息|动态|展览|论坛|项目|课程|活动|发布|新闻|热点|趋势|政策|价格|进展|变化|职务|经历|研究方向|开放|获奖)/u;
+const CURRENT_QUESTION_PATTERN = /[?？]|(?:什么|哪些|有没有|有何|是否|查|搜|找|介绍|说说|讲讲|是什么|有哪些|发生|发布|举办|开放|获得)/u;
 const SEARCH_BLOCKERS = [
   "学号", "手机号", "电话", "联系方式", "微信", "邮箱", "宿舍", "房间", "床位", "住址",
   "年龄", "身份证", "身份证号", "成绩", "团务", "个人事务", "隐私", "密码", "偷拍",
@@ -122,7 +124,8 @@ export function shouldUseWebSearch(query, options = {}) {
   if (options.enabled === false) return false;
   if (options.mode === "always") return !SEARCH_BLOCKERS.some((cue) => text.includes(cue));
   if (SEARCH_BLOCKERS.some((cue) => text.includes(cue))) return false;
-  return SEARCH_CUES.some((cue) => text.includes(cue));
+  return SEARCH_CUES.some((cue) => text.includes(cue))
+    || (CURRENT_INFO_PATTERN.test(text) && CURRENT_QUESTION_PATTERN.test(text));
 }
 
 function cleanSearchQuery(query) {

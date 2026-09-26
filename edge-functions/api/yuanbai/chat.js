@@ -11,7 +11,7 @@ const DEEPSEEK_SEARCH_MAX_USES = 3;
 const DEEPSEEK_SEARCH_MAX_RESULTS = 6;
 const DEEPSEEK_SEARCH_TIMEOUT_MS = 12_000;
 // EdgeOne Edge Functions accept request bodies up to 1 MB. Keep headroom for
-// the JSON wrapper around the base64-encoded WAV audio.
+// the JSON wrapper around the base64-encoded compressed audio.
 const MAX_AUDIO_BASE64_LENGTH = 800_000;
 const MAX_HISTORY_MESSAGES = 8;
 const TTS_SPEECH_RATE = 0.95;
@@ -43,7 +43,7 @@ function jsonResponse(data, status = 200, origin = "") {
   });
 }
 
-function audioFormatFromMime(mimeType) {
+export function audioFormatFromMime(mimeType) {
   const mime = String(mimeType || "audio/webm").toLowerCase().split(";")[0];
   const formats = {
     "audio/webm": "webm",

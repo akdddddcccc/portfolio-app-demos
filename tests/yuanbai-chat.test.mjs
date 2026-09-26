@@ -1,6 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { onRequestPost } from "../edge-functions/api/yuanbai/chat.js";
+import { audioFormatFromMime, onRequestPost } from "../edge-functions/api/yuanbai/chat.js";
+
+test("maps browser-compressed audio containers to supported ASR formats", () => {
+  assert.deepEqual(audioFormatFromMime("audio/webm;codecs=opus"), {
+    mime: "audio/webm",
+    format: "webm",
+  });
+  assert.deepEqual(audioFormatFromMime("audio/ogg;codecs=opus"), {
+    mime: "audio/ogg",
+    format: "ogg",
+  });
+  assert.deepEqual(audioFormatFromMime("audio/mp4"), {
+    mime: "audio/mp4",
+    format: "mp4",
+  });
+});
 
 test("rejects audio that would exceed the EdgeOne request-body budget before calling providers", async () => {
   const request = new Request("https://example.test/api/yuanbai/chat", {

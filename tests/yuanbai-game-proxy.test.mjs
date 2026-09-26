@@ -15,6 +15,7 @@ test("榜单同源转发保留页码、规则版本和榜单类型", async () =>
   assert.equal((await response.json()).board, "deaths");
   assert.match(upstream.url, /board=deaths/);
   assert.equal(upstream.options.method, "GET");
+  assert.equal(upstream.options.signal, undefined, "use EdgeOne's supported fetch timeout instead of AbortSignal.timeout");
   assert.equal(response.headers.get("cache-control"), "no-store");
 });
 

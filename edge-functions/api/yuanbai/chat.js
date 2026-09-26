@@ -59,6 +59,17 @@ export function audioFormatFromMime(mimeType) {
   return { mime, format: formats[mime] || "webm" };
 }
 
+/**
+ * Silently normalize common ASR homophones when the surrounding wording clearly
+ * addresses Yuanbai or names Yuanbai House. Leave standalone person names intact.
+ */
+export function normalizeYuanbaiAsrTranscript(transcript) {
+  return String(transcript || "")
+    .replace(/袁白(?=楼)/gu, "元白")
+    .replace(/袁白(?=老师)/gu, "元白")
+    .replace(/袁白(?=[，,、：:]?\s*(?:你|能|可以|请|给我|讲|说|记得|知道|帮我|怎么|是谁|在吗))/gu, "元白");
+}
+
 async function fetchJson(url, options, serviceName) {
   const response = await fetch(url, options);
   const text = await response.text();
@@ -366,7 +377,9 @@ export async function onRequestPost({ request, env }) {
       return jsonResponse({ ok: false, error: "这段录音太长了，请分成两次说。" }, 413, origin);
     }
 
-    const transcript = await transcribe(audioBase64, body.mime_type, env.DASHSCOPE_API_KEY);
+    const transcript = normalizeYuanbaiAsrTranscript(
+      await transcribe(audioBase64, body.mime_type, env.DASHSCOPE_API_KEY),
+    );
     if (!transcript) return jsonResponse({ ok: false, error: "我没有听清，请靠近麦克风再说一次。" }, 422, origin);
 
     const chatResult = await chat(

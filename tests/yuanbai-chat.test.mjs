@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { audioFormatFromMime, onRequestPost } from "../edge-functions/api/yuanbai/chat.js";
+import { audioFormatFromMime, normalizeYuanbaiAsrTranscript, onRequestPost } from "../edge-functions/api/yuanbai/chat.js";
+
+test("silently normalizes Yuanbai ASR homophones without rewriting another person's name", () => {
+  assert.equal(normalizeYuanbaiAsrTranscript("袁白老师，能给我讲讲设计思维吗？"), "元白老师，能给我讲讲设计思维吗？");
+  assert.equal(normalizeYuanbaiAsrTranscript("我想回袁白楼看看。"), "我想回元白楼看看。");
+  assert.equal(normalizeYuanbaiAsrTranscript("袁白同学的设计作品很有意思。"), "袁白同学的设计作品很有意思。");
+});
 
 test("maps browser-compressed audio containers to supported ASR formats", () => {
   assert.deepEqual(audioFormatFromMime("audio/webm;codecs=opus"), {

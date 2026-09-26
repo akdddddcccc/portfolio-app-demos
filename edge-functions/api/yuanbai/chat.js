@@ -10,7 +10,9 @@ const DEEPSEEK_SEARCH_API_VERSION = "2023-06-01";
 const DEEPSEEK_SEARCH_MAX_USES = 3;
 const DEEPSEEK_SEARCH_MAX_RESULTS = 6;
 const DEEPSEEK_SEARCH_TIMEOUT_MS = 12_000;
-const MAX_AUDIO_BASE64_LENGTH = 8_000_000;
+// EdgeOne Edge Functions accept request bodies up to 1 MB. Keep headroom for
+// the JSON wrapper around the base64-encoded WAV audio.
+const MAX_AUDIO_BASE64_LENGTH = 800_000;
 const MAX_HISTORY_MESSAGES = 8;
 const TTS_SPEECH_RATE = 0.95;
 const DEFAULT_TTS_MODEL = "qwen-audio-3.1-tts-flash";

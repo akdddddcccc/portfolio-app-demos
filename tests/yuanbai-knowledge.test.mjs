@@ -5,7 +5,13 @@ import {
   getCuratedStudentNameAnswer,
   getCuratedStudentRosterFallback,
   getCuratedStudentRosterCounts,
+  YUANBAI_SYSTEM_PROMPT,
 } from "../edge-functions/_shared/yuanbai-knowledge.js";
+
+test("accepts homophone forms of Yuanbai without correcting the speaker", () => {
+  assert.match(YUANBAI_SYSTEM_PROMPT, /“袁白老师”等与“元白”同音或近音的称呼叫你时，顺着语境自然回应，不纠正用字/u);
+  assert.match(YUANBAI_SYSTEM_PROMPT, /我猜你想问的是元白/u);
+});
 
 test("retrieves verified Yuanbai building history", () => {
   const context = buildCuratedKnowledgeContext("元白楼为什么有十五个盒子？");

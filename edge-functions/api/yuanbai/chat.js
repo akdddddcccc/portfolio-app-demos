@@ -1,4 +1,4 @@
-import { YUANBAI_SYSTEM_PROMPT, buildCuratedKnowledgeContext, getCuratedPersonContext, getCuratedStudentNameAnswer, getCuratedStudentRosterFallback, hasCuratedStudentMatch } from "../../_shared/yuanbai-knowledge.js";
+import { YUANBAI_SYSTEM_PROMPT, buildCuratedKnowledgeContext, getCuratedPersonContext, getCuratedClassAdviserAnswer, getCuratedStudentNameAnswer, getCuratedStudentRosterFallback, hasCuratedStudentMatch } from "../../_shared/yuanbai-knowledge.js";
 import { personSubject } from "../../_shared/yuanbai-person-query.js";
 
 const DASHSCOPE_BASE = "https://dashscope.aliyuncs.com";
@@ -299,6 +299,8 @@ async function transcribe(audioBase64, mimeType, apiKey) {
 }
 
 export async function chat(transcript, history, apiKey, apiBase, model, searchOptions = {}) {
+  const adviserAnswer=getCuratedClassAdviserAnswer(transcript);
+  if(adviserAnswer)return {answer:adviserAnswer,webSources:[],webSearchAttempted:false,researchStages:[{stage:'corpus',status:'hit'}]};
   const personQuery = isPersonKnowledgeQuery(transcript);
   const personContext = personQuery ? getCuratedPersonContext(transcript) : '';
   // An unrelated student entry is not evidence about an unknown public person.
@@ -311,7 +313,7 @@ export async function chat(transcript, history, apiKey, apiBase, model, searchOp
   let webSearchAttempted = false;
   const researchStages = [{stage:'corpus',status:personContext?'hit':'miss'}];
   const localAnswerSufficient = personContext && personSubject(transcript)
-    && /认识|知道|听说|介绍|是谁/u.test(transcript)
+    && /认识|知道|听说|介绍|是谁|研究什么|研究领域|研究方向|擅长什么|主要做什么/u.test(transcript)
     && !SEARCH_CUES.some(cue=>transcript.includes(cue)) && !CURRENT_INFO_PATTERN.test(transcript);
   if (!localAnswerSufficient && shouldUseWebSearch(transcript, searchOptions)) {
     webSearchAttempted = true;

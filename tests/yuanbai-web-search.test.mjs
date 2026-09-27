@@ -79,6 +79,24 @@ test('已有可靠人物语料直接回答，不做无意义联网',async t=>{
   assert.equal(count,1);assert.equal(result.webSearchAttempted,false);
 });
 
+test('三个班主任直接命中，老师介绍不走学生姓名兜底',async t=>{
+  const calls=[];
+  t.mock.method(globalThis,'fetch',async(url,options)=>{
+    const body=JSON.parse(options.body);calls.push(body);
+    assert.match(String(url),/chat\/completions$/);
+    return Response.json({choices:[{message:{content:'这位老师有自己的专业研究方向。'}}]});
+  });
+  const all=await chat('我们三个班班主任分别是谁',[],'key');
+  assert.match(all.answer,/1班是詹震宇.*2班是刘亚明.*3班是徐腾飞/);
+  assert.equal(calls.length,0);
+  for(const [name,field,index] of [['詹震宇','视觉传达',1],['刘亚明','适老化',2],['徐腾飞','艺术史论',3]]){
+    const role=await chat(`2026级${index}班班主任是谁`,[],'key');
+    assert.match(role.answer,new RegExp(name));
+    await chat(`你认不认识${name}老师`,[],'key');
+    assert.match(calls.at(-1).messages[1].content,new RegExp(field));
+  }
+});
+
 test('学院官网有对应人物证据就停止继续全网；搜索故障不提前答名单未知',async t=>{
   for(const failSchool of [false,true]){
     const calls=[];

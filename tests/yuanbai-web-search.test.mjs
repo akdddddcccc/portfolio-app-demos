@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { chat, buildPublicSearchQuery } from "../edge-functions/api/yuanbai/chat.js";
 import {
   formatWebSearchContext,
   parseSearchSources,
@@ -17,6 +18,35 @@ test("only sends public/current questions to web search", () => {
   assert.equal(shouldUseWebSearch("今天有没有什么设计或者AI科技方面的大新闻？"), true);
   assert.equal(shouldUseWebSearch("最近我做项目很疲惫"), false);
   assert.equal(shouldUseWebSearch("查一下学院猫在小红书有没有公开内容"), true);
+});
+
+test("person questions leave the student fallback and use bounded public research",()=>{
+  for(const query of ["你知道李飞飞吗？","你认识原研哉吗","是不是有一个很著名的设计师","学院的刘亚明老师研究什么？","你知道高鹏吗？","高院是谁"]){
+    assert.equal(shouldUseWebSearch(query),true,query);
+  }
+  for(const query of ["你知道何任选吗","你认识朱玉洁吗？","查一下张三同学的情况","你知道李飞飞的联系方式吗","你知道设计思维吗"]){
+    assert.equal(shouldUseWebSearch(query),false,query);
+  }
+  assert.match(buildPublicSearchQuery("高院长最近有什么项目"),/北京师范大学未来设计学院 高鹏/);
+});
+
+test("public person reaches search and generation; classmates stay local",async t=>{
+  const calls=[];
+  t.mock.method(globalThis,"fetch",async(url,options)=>{
+    const body=JSON.parse(options.body);calls.push({url:String(url),body});
+    if(String(url).endsWith("/messages"))return Response.json({content:[{type:"web_search_tool_result",content:[{type:"web_search_result",url:"https://profiles.stanford.edu/fei-fei-li",title:"Fei-Fei Li",snippet:"Computer vision and human-centered AI"}]}]});
+    return Response.json({choices:[{message:{content:"李飞飞研究计算机视觉，也一直关注AI如何帮助人。"}}]});
+  });
+  const answer=await chat("你知道李飞飞吗？",[],"test-key",undefined,undefined,{enabled:true});
+  assert.equal(answer.webSearchAttempted,true);
+  assert.equal(calls.length,2);
+  assert.equal(calls[0].body.tools[0].max_uses,1);
+  assert.match(calls[0].body.messages[0].content[0].text,/design.bnu.edu.cn/);
+  assert.match(calls[1].body.messages[1].content,/不提无关班级/);
+  assert.equal(answer.webSources[0].url,"https://profiles.stanford.edu/fei-fei-li");
+  const student=await chat("你知道何任选吗",[],"test-key",undefined,undefined,{enabled:true});
+  assert.match(student.answer,/26级1班/);
+  assert.equal(calls.length,2);
 });
 
 test("maps native DeepSeek search blocks into safe evidence sources", () => {

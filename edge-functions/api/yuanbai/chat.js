@@ -1,4 +1,4 @@
-import { YUANBAI_SYSTEM_PROMPT, buildCuratedKnowledgeContext, getCuratedStudentNameAnswer, getCuratedStudentRosterFallback } from "../../_shared/yuanbai-knowledge.js";
+import { YUANBAI_SYSTEM_PROMPT, buildCuratedKnowledgeContext, getCuratedStudentNameAnswer, getCuratedStudentRosterFallback, hasCuratedStudentMatch } from "../../_shared/yuanbai-knowledge.js";
 
 const DASHSCOPE_BASE = "https://dashscope.aliyuncs.com";
 const DEEPSEEK_BASE = "https://api.deepseek.com";
@@ -17,6 +17,7 @@ const MAX_HISTORY_MESSAGES = 8;
 const TTS_SPEECH_RATE = 0.95;
 const DEFAULT_TTS_MODEL = "qwen-audio-3.1-tts-flash";
 const DEFAULT_TTS_VOICE_ID = "qwen-audio-3.1-tts-flash-bailian-99b47d2c8e7a459d9e49d67ab2d9033d";
+const VOICE_QUEUE_BASE = "http://123.56.162.88/yuanbai-queue/api/yuanbai/voice-queue/";
 const ALLOWED_ORIGINS = new Set([
   "https://apps-demo.muyang23333.top",
   "https://muyang23333.top",
@@ -65,6 +66,7 @@ export function audioFormatFromMime(mimeType) {
  */
 export function normalizeYuanbaiAsrTranscript(transcript) {
   return String(transcript || "")
+    .replace(/(?:高朋|高彭|高澎)(?=院长|老师)/gu, "高鹏")
     .replace(/袁白(?=楼)/gu, "元白")
     .replace(/袁白(?=老师)/gu, "元白")
     .replace(/袁白(?=[，,、：:]?\s*(?:你|能|可以|请|给我|讲|说|记得|知道|帮我|怎么|是谁|在吗))/gu, "元白");
@@ -122,10 +124,28 @@ export function shouldUseWebSearch(query, options = {}) {
   const text = String(query || "").trim();
   if (!text || text.length < 2) return false;
   if (options.enabled === false) return false;
+  if (/(同学|学生|几班|哪个班|哪一班|班级)/u.test(text) || hasCuratedStudentMatch(text)) return false;
   if (options.mode === "always") return !SEARCH_BLOCKERS.some((cue) => text.includes(cue));
   if (SEARCH_BLOCKERS.some((cue) => text.includes(cue))) return false;
   return SEARCH_CUES.some((cue) => text.includes(cue))
+    || isPersonKnowledgeQuery(text)
     || (CURRENT_INFO_PATTERN.test(text) && CURRENT_QUESTION_PATTERN.test(text));
+}
+
+export function isPersonKnowledgeQuery(query) {
+  const text = String(query || "").replace(/\s+/gu, "");
+  if (/(同学|学生|几班|班级)/u.test(text)) return false;
+  if (/(设计师|建筑师|艺术家|科学家|研究员|创始人|教授|老师|院长|高院|高鹏)/u.test(text)) return true;
+  if (/(设计思维|学院猫|元白|袁白|小灯|如意|小海绵|是什么|怎么)/u.test(text)) return false;
+  return /^(?:请问)?(?:你知道|你认识|你认得|介绍一下|说说|讲讲)[\p{Script=Han}·]{2,4}(?:吗|呢|是谁)?[？?。!！]*$/u.test(text)
+    || /^[\p{Script=Han}·]{2,4}是谁[？?。]*$/u.test(text);
+}
+
+export function buildPublicSearchQuery(query) {
+  const text = cleanSearchQuery(query);
+  if (/(高院长|高院|高鹏)/u.test(text)) return `北京师范大学未来设计学院 高鹏 院长 ${text}`;
+  if (/(学院|设院)/u.test(text)) return `北京师范大学未来设计学院 ${text}`;
+  return text;
 }
 
 function cleanSearchQuery(query) {
@@ -214,7 +234,7 @@ export async function searchDeepSeek(query, apiKey, options = {}) {
       body: JSON.stringify({
         model: options.model || DEEPSEEK_SEARCH_MODEL,
         max_tokens: positiveInteger(options.maxTokens, 768),
-        messages: [{ role: "user", content: [{ type: "text", text: `Perform a web search for the query: ${searchQuery}` }] }],
+        messages: [{ role: "user", content: [{ type: "text", text: `Perform a web search for the query: ${searchQuery}\n仅核验与问题相关的公开职业、作品和研究信息，优先本人机构、大学和项目官网。涉及未来设计学院的老师、项目或人物时，优先检索北京师范大学未来设计学院 design.bnu.edu.cn。人物同名时不能拼接不同人的经历；没有明确职业身份时不要查私人身份、学生名单或联系方式。简要返回可支持回答的事实与来源。` }] }],
         tools: [{
           type: "web_search_20250305",
           name: "web_search",
@@ -274,7 +294,7 @@ async function transcribe(audioBase64, mimeType, apiKey) {
   return String(data.output?.text || data.output?.output?.text || "").trim();
 }
 
-async function chat(transcript, history, apiKey, apiBase, model, searchOptions = {}) {
+export async function chat(transcript, history, apiKey, apiBase, model, searchOptions = {}) {
   const curatedContext = buildCuratedKnowledgeContext(transcript);
   const rosterAnswer = getCuratedStudentNameAnswer(transcript);
   if (rosterAnswer) return { answer: rosterAnswer, webSources: [], webSearchAttempted: false };
@@ -285,7 +305,10 @@ async function chat(transcript, history, apiKey, apiBase, model, searchOptions =
   if (shouldUseWebSearch(transcript, searchOptions)) {
     webSearchAttempted = true;
     try {
-      webSources = await searchDeepSeek(transcript, apiKey, searchOptions);
+      webSources = await searchDeepSeek(buildPublicSearchQuery(transcript), apiKey, {
+        ...searchOptions,
+        ...(isPersonKnowledgeQuery(transcript) ? {maxUses: 1} : {}),
+      });
     } catch (error) {
       // 联网是增强能力；搜索失败时仍让元白依据本地已核验资料回答，避免一次网络抖动拖垮对话。
       console.warn("Yuanbai web search unavailable", error?.message || error);
@@ -298,7 +321,7 @@ async function chat(transcript, history, apiKey, apiBase, model, searchOptions =
       : "[联网检索状态：已发起，但当前没有收到可引用的来源；不要把本次回答说成刚刚查到网页]"
     : "";
   const knowledgeContext = [
-    "下面是与你们谈话有关的记忆和线索。直接用元白的口吻回答，不要向对方讲内部整理方式或记忆从哪里调取；记不准时坦率但自然地说出来。",
+    "下面是与你们谈话有关的记忆和线索。直接用元白的口吻回答，不要向对方讲内部整理方式或记忆从哪里调取；记不准时坦率但自然地说出来。人物问题先区分同学、学院老师和公众人物：学生名单没有匹配不等于不认识公众人物，不提无关班级。设计或AI领域人物用两三句话讲清身份、一个代表方向或成果，以及与问题相关的启发。李飞飞等AI研究者不能因讨论设计就被称为设计师。默认不说‘网上查到’‘根据公开资料’‘语料库里’，不主动报出处；用户追问来源或检索能力时如实说明。表达可以像熟悉的知识，但不编造亲历、私交或确定性。检索失败不等于人物不存在；身份没有可靠依据时承认具体不确定处。",
     curatedContext,
     webSearchStatus,
     webContext,
@@ -363,6 +386,8 @@ export async function onRequestOptions({ request }) {
 }
 
 export async function onRequestPost({ request, env }) {
+  let queueLease;
+  let answered = false;
   const origin = request.headers.get("Origin") || "";
   if (origin && !ALLOWED_ORIGINS.has(origin) && !/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)) {
     return jsonResponse({ ok: false, error: "当前来源不能调用元白服务。" }, 403, origin);
@@ -379,6 +404,22 @@ export async function onRequestPost({ request, env }) {
     if (audioBase64.length > MAX_AUDIO_BASE64_LENGTH) {
       return jsonResponse({ ok: false, error: "这段录音太长了，请分成两次说。" }, 413, origin);
     }
+    const queueTicket = typeof body.voice_queue_ticket === "string" ? body.voice_queue_ticket : "";
+    if (!/^[a-f0-9-]{36}$/i.test(queueTicket)) {
+      return jsonResponse({ok:false,error:"请先进入等候队列，再开始对话。"},429,origin);
+    }
+    const queueResponse = await fetch(`${VOICE_QUEUE_BASE}claim`, {
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ticket:queueTicket}),redirect:"error",
+    });
+    if (!queueResponse.ok) {
+      let queueError;
+      try { queueError = await queueResponse.json(); } catch {}
+      return jsonResponse({ok:false,error:queueError?.error||"排队服务暂时未能回应，请稍后再试。"},[409,410,429].includes(queueResponse.status)?queueResponse.status:503,origin);
+    }
+    const admission = await queueResponse.json();
+    if (!admission.ok || !admission.claimToken) throw new Error("这次等候已失效，请重新试一次。");
+    queueLease = {ticket:queueTicket,claimToken:admission.claimToken};
 
     const transcript = normalizeYuanbaiAsrTranscript(
       await transcribe(audioBase64, body.mime_type, env.DASHSCOPE_API_KEY),
@@ -414,6 +455,7 @@ export async function onRequestPost({ request, env }) {
       env.YUANBAI_TTS_VOICE_ID,
     );
 
+    answered = true;
     return jsonResponse(
       {
         ok: true,
@@ -433,5 +475,12 @@ export async function onRequestPost({ request, env }) {
   } catch (error) {
     console.error("Yuanbai request failed", error?.message || error);
     return jsonResponse({ ok: false, error: error?.message || "元白暂时没有回答成功，请再试一次。" }, 502, origin);
+  } finally {
+    if (queueLease) {
+      try {
+        await fetch(`${VOICE_QUEUE_BASE}complete`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(queueLease),redirect:"error"});
+        if (!answered) await fetch(`${VOICE_QUEUE_BASE}release`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket:queueLease.ticket}),redirect:"error"});
+      } catch { console.warn("Yuanbai queue completion unavailable; lease will expire"); }
+    }
   }
 }

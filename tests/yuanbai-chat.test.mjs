@@ -73,3 +73,42 @@ test("provider failure completes and releases the admission lease", async t => {
   ]);
   assert.doesNotMatch(await response.text(), /server-only-token/);
 });
+
+test("TTS rate limit logs its stage and provider request ID without private input", async t => {
+  const logs = [];
+  t.mock.method(console, "error", (...args) => logs.push(args));
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const target = String(url);
+    if (target.endsWith("/claim")) return Response.json({ ok: true, claimToken: "server-only-token" });
+    if (target.endsWith("/complete") || target.endsWith("/release")) return Response.json({ ok: true });
+    if (target.includes("multimodal-generation")) return Response.json({ output: { text: "你好" } });
+    if (target.includes("chat/completions")) return Response.json({ choices: [{ message: { content: "你好，慢慢说。" } }] });
+    if (target.includes("SpeechSynthesizer")) {
+      return Response.json({ code: "Throttling.RateQuota", message: "Too many requests", request_id: "tts-request-123" }, { status: 429 });
+    }
+    throw new Error(`Unexpected test URL: ${target}`);
+  });
+
+  const response = await onRequestPost({
+    request: new Request("https://example.test/api/yuanbai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        audio_base64: "QUJD",
+        mime_type: "audio/webm",
+        voice_queue_ticket: "12345678-1234-1234-1234-123456789abc",
+      }),
+    }),
+    env: { DASHSCOPE_API_KEY: "private-test-key", DEEPSEEK_API_KEY: "private-test-key" },
+  });
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(logs, [["Yuanbai request failed", {
+    stage: "语音合成",
+    upstream_status: 429,
+    upstream_code: "Throttling.RateQuota",
+    request_id: "tts-request-123",
+    error_name: "Error",
+  }]]);
+  assert.doesNotMatch(JSON.stringify(logs), /private-test-key|server-only-token|QUJD|你好/u);
+});

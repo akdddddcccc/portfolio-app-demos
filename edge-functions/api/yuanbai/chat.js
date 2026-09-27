@@ -73,18 +73,29 @@ export function normalizeYuanbaiAsrTranscript(transcript) {
 }
 
 async function fetchJson(url, options, serviceName) {
-  const response = await fetch(url, options);
-  const text = await response.text();
-  let data;
   try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error(`${serviceName} 返回了无法读取的结果`);
+    const response = await fetch(url, options);
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      const error = new Error(`${serviceName} 返回了无法读取的结果`);
+      error.upstreamStatus = response.status;
+      throw error;
+    }
+    if (!response.ok || data?.code) {
+      const error = new Error(`${serviceName} 请求失败：${data?.message || data?.code || response.status}`);
+      error.upstreamStatus = response.status;
+      error.upstreamCode = String(data?.code || data?.error?.code || "");
+      error.requestId = String(data?.request_id || data?.requestId || response.headers.get("x-request-id") || "");
+      throw error;
+    }
+    return data;
+  } catch (error) {
+    if (error && typeof error === "object" && !error.stage) error.stage = serviceName;
+    throw error;
   }
-  if (!response.ok || data.code) {
-    throw new Error(`${serviceName} 请求失败：${data.message || data.code || response.status}`);
-  }
-  return data;
 }
 
 function cleanHistory(value) {
@@ -375,10 +386,23 @@ async function synthesize(text, apiKey, model, voice) {
     "语音合成",
   );
   const audioUrl = typeof data.output?.audio === "string" ? data.output.audio : data.output?.audio?.url;
-  if (!audioUrl) throw new Error("语音合成没有返回音频地址");
-  const audioResponse = await fetch(audioUrl);
-  if (!audioResponse.ok) throw new Error("生成的声音文件下载失败");
-  return arrayBufferToBase64(await audioResponse.arrayBuffer());
+  if (!audioUrl) {
+    const error = new Error("语音合成没有返回音频地址");
+    error.stage = "语音合成";
+    throw error;
+  }
+  try {
+    const audioResponse = await fetch(audioUrl);
+    if (!audioResponse.ok) {
+      const error = new Error("生成的声音文件下载失败");
+      error.upstreamStatus = audioResponse.status;
+      throw error;
+    }
+    return arrayBufferToBase64(await audioResponse.arrayBuffer());
+  } catch (error) {
+    if (error && typeof error === "object") error.stage = "语音文件下载";
+    throw error;
+  }
 }
 
 export async function onRequestOptions({ request }) {
@@ -473,7 +497,14 @@ export async function onRequestPost({ request, env }) {
       origin,
     );
   } catch (error) {
-    console.error("Yuanbai request failed", error?.message || error);
+    // Keep provider diagnostics without logging prompts, audio, API keys or answers.
+    console.error("Yuanbai request failed", {
+      stage: error?.stage || "请求处理",
+      upstream_status: Number.isInteger(error?.upstreamStatus) ? error.upstreamStatus : null,
+      upstream_code: error?.upstreamCode || null,
+      request_id: error?.requestId || null,
+      error_name: error?.name || "Error",
+    });
     return jsonResponse({ ok: false, error: error?.message || "元白暂时没有回答成功，请再试一次。" }, 502, origin);
   } finally {
     if (queueLease) {

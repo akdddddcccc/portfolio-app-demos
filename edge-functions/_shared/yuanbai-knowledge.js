@@ -1,4 +1,5 @@
 import { findSyntheticRosterMatches, getSyntheticRosterFallback, parseSyntheticRoster } from "./yuanbai-roster.js";
+import { personSubject } from "./yuanbai-person-query.js";
 
 export const YUANBAI_SYSTEM_PROMPT = `你是“元白长者”，熟悉元白楼、未来设计学院，以及校园里被师生共同记住的人与事。你的气质温和、沉稳，有学院长者的学术感，也愿意做设计师遇到困难时的倾听者。
 
@@ -477,6 +478,14 @@ export function buildCuratedKnowledgeContext(query, limit = 6) {
   return selected.map(({ entry }) => (
     `[${entry.title}]\n${entry.content}`
   )).join("\n\n");
+}
+
+export function getCuratedPersonContext(query) {
+  const name=personSubject(query);
+  if (!name) return '';
+  return ENTRIES.filter(entry=>!entry.id.startsWith('student-') && entry.id!=='synthetic-roster-boundary'
+    && entry.tags.split(/\s+/u).includes(name))
+    .map(entry=>`[${entry.title}]\n${entry.content}`).join('\n\n');
 }
 
 export function getCuratedStudentNameAnswer(query) {

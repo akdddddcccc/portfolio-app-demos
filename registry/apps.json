@@ -38,6 +38,23 @@
       },
       "embedQuery": "embed=portfolio",
       "portfolioProjectKey": "yuanbai"
+    },
+    {
+      "slug": "soft-sense",
+      "title": "Soft Sense",
+      "repository": null,
+      "branch": "main",
+      "path": "apps/soft-sense",
+      "publicPath": "/soft-sense/",
+      "buildOutput": "dist",
+      "packageManager": "npm",
+      "defaultOrientation": "landscape",
+      "landscapeFrame": {
+        "width": 1440,
+        "height": 900
+      },
+      "embedQuery": "embed=portfolio",
+      "portfolioProjectKey": "soft-sense"
     }
   ]
 }

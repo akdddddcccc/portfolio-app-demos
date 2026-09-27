@@ -1,4 +1,5 @@
 import { findSyntheticRosterMatches, getSyntheticRosterFallback, parseSyntheticRoster } from "./yuanbai-roster.js";
+import { personSubject } from "./yuanbai-person-query.js";
 
 export const YUANBAI_SYSTEM_PROMPT = `你是“元白长者”，熟悉元白楼、未来设计学院，以及校园里被师生共同记住的人与事。你的气质温和、沉稳，有学院长者的学术感，也愿意做设计师遇到困难时的倾听者。
 
@@ -78,8 +79,36 @@ const ENTRIES = [
     title: "詹震宇老师的公开研究领域",
     kind: "公开核验资料｜A 官方师资",
     tags: "詹震宇 老师 讲师 视觉传达 班主任 字体 排版",
-    source: "学院官网‘詹震宇’ https://design.bnu.edu.cn/faculty/teachers/lecturer/133501.htm ，核验于2026-09-24",
-    content: "官网介绍詹震宇为未来设计学院、未来设计创新研究中心讲师，研究领域为视觉传达。本科和硕士毕业于南京艺术学院。个人页不构成当前班主任任职证明；本地旧版测试资料中的班主任说法仍需用户确认，不与官网师资事实混写。可以据视觉传达领域建议用户准备版式、信息层级等具体问题，但不代替老师给分或猜测个人偏好。",
+    source: "https://design.bnu.edu.cn/faculty/teachers/lecturer/133501.htm",
+    verifiedAt: "2026-09-28",
+    content: "詹震宇是未来设计学院、未来设计创新研究中心讲师，研究领域为视觉传达。本科和硕士毕业于南京艺术学院。获奖经历包括靳埭强设计奖、GDC平面设计在中国双年展和澳门设计双年展的相关奖项。可以聊视觉传达、版式与信息层级，不推测老师私人性格、评分偏好或未说明的课程安排。2026级班主任对应关系单独见用户确认的班主任条目。",
+  },
+  {
+    id: "faculty-liu-yaming",
+    title: "刘亚明老师：交互设计、用户体验与适老化",
+    kind: "公开核验资料｜A 官方师资",
+    tags: "刘亚明 老师 副教授 交互设计 用户体验 适老化 设计教育 数字界面",
+    source: "https://design.bnu.edu.cn/faculty/teachers/aprof/f8d33c489d7b4864b1d07561b5a30c41.htm",
+    verifiedAt: "2026-09-28",
+    content: "刘亚明是未来设计学院、未来设计创新研究中心副教授，研究领域为交互设计、用户体验、适老化设计。本科和硕士分别毕业于湖南大学、香港理工大学。教学项目包括数字界面设计和交互艺术设计的线上线下混合式课程，研究涉及人机交互界面的视觉感知与优化。介绍时可围绕产品是否易懂易用、不同年龄用户的体验展开，不虚构私人性格或课程评分习惯。",
+  },
+  {
+    id: "faculty-xu-tengfei",
+    title: "徐腾飞老师：艺术史论、设计教育与策展",
+    kind: "公开核验资料｜A 官方师资",
+    tags: "徐腾飞 老师 副教授 博士生导师 艺术史论 设计教育 当代艺术 策展 美术鉴赏",
+    source: "https://design.bnu.edu.cn/faculty/teachers/aprof/120412.htm",
+    verifiedAt: "2026-09-28",
+    content: "徐腾飞是未来设计学院、未来设计创新研究中心副教授、博士生导师，研究领域为艺术史论、设计教育、当代艺术策展与实践。本科、硕士和博士毕业于中央美术学院，曾在清华大学美术学院从事艺术学理论方向博士后研究。参与《加德纳艺术通史》的编译工作，也开展数字化美术鉴赏课程建设和展览实践。可以从艺术史、展览如何组织观看、设计教育的角度介绍，不虚构师生私交。",
+  },
+  {
+    id: "internal-2026-class-advisers",
+    title: "2026级三个班的班主任",
+    kind: "用户确认资料｜B 项目内部班务",
+    tags: "2026级 26级 本级 本届 班主任 三个班 一班 二班 三班 1班 2班 3班 詹震宇 刘亚明 徐腾飞",
+    source: "用户提供的2026级新生分班通知及2026-09-28再次确认；班主任关系不伪装成官网证明",
+    verifiedAt: "2026-09-28",
+    content: "2026级1班班主任是詹震宇老师，2026级2班班主任是刘亚明老师，2026级3班班主任是徐腾飞老师。问本届三个班的班主任时直接说出这三个对应关系；他们是带班老师，不是班里的学生。只介绍职务与公开专业背景，不提供电话号码、联系方式或私人事务。不得把这组任职关系套用到其他年级。",
   },
   {
     id: "school-project-reading",
@@ -479,8 +508,17 @@ export function buildCuratedKnowledgeContext(query, limit = 6) {
   )).join("\n\n");
 }
 
+export function getCuratedPersonContext(query) {
+  const name=personSubject(query);
+  if (!name) return '';
+  return ENTRIES.filter(entry=>!entry.id.startsWith('student-') && entry.id!=='synthetic-roster-boundary'
+    && entry.tags.split(/\s+/u).includes(name))
+    .map(entry=>`[${entry.title}]\n${entry.content}`).join('\n\n');
+}
+
 export function getCuratedStudentNameAnswer(query) {
   const text = String(query || "").replace(/\s+/g, "");
+  if (['詹震宇','刘亚明','徐腾飞'].some(name=>text.includes(name))) return null;
   if (!/(你知道|你认识|你认得|认识|认得|是谁|哪位|几班|哪个班|哪一班|什么班|班级)/u.test(text)) return null;
   const asksWho = /(你知道|你认识|你认得|认识|认得|是谁|哪位)/u.test(text);
   const matches = findSyntheticRosterMatches(text, STUDENT_ROSTER, { includeGender: asksWho });
@@ -529,7 +567,22 @@ export function getCuratedStudentRosterFallback(query) {
 }
 
 export function hasCuratedStudentMatch(query) {
+  if (['詹震宇','刘亚明','徐腾飞'].some(name=>String(query).includes(name))) return false;
   return findSyntheticRosterMatches(query, STUDENT_ROSTER).length > 0;
+}
+
+export function getCuratedClassAdviserAnswer(query) {
+  const text=String(query||'');
+  if (/联系|电话|微信|邮箱|隐私|研究|介绍|作品|课程|经历|获奖/u.test(text)) return null;
+  const years=text.match(/(?:20)?\d{2}级/gu)||[];
+  if(years.some(year=>year!=='26级'&&year!=='2026级'))return null;
+  const advisers=['詹震宇','刘亚明','徐腾飞'];
+  const named=advisers.findIndex(name=>text.includes(name));
+  if(named>=0&&/班主任|几班|哪个班|哪一班|带.*班/u.test(text))return `${advisers[named]}老师是2026级${named+1}班的班主任。`;
+  if(!/班主任/u.test(text))return null;
+  const classes=[...text.matchAll(/([123一二三])班/gu)].map(match=>'123'.includes(match[1])?Number(match[1]):'一二三'.indexOf(match[1])+1);
+  if(classes.length===1)return `2026级${classes[0]}班的班主任是${advisers[classes[0]-1]}老师。`;
+  return '你们2026级的三个班，1班是詹震宇老师，2班是刘亚明老师，3班是徐腾飞老师担任班主任。';
 }
 
 export function getCuratedStudentRosterCounts() {

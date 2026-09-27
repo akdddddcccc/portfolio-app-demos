@@ -1,4 +1,5 @@
-import { YUANBAI_SYSTEM_PROMPT, buildCuratedKnowledgeContext, getCuratedStudentNameAnswer, getCuratedStudentRosterFallback, hasCuratedStudentMatch } from "../../_shared/yuanbai-knowledge.js";
+import { YUANBAI_SYSTEM_PROMPT, buildCuratedKnowledgeContext, getCuratedPersonContext, getCuratedClassAdviserAnswer, getCuratedStudentNameAnswer, getCuratedStudentRosterFallback, hasCuratedStudentMatch } from "../../_shared/yuanbai-knowledge.js";
+import { personSubject } from "../../_shared/yuanbai-person-query.js";
 
 const DASHSCOPE_BASE = "https://dashscope.aliyuncs.com";
 const DEEPSEEK_BASE = "https://api.deepseek.com";
@@ -136,6 +137,8 @@ export function isPersonKnowledgeQuery(query) {
   const text = String(query || "").replace(/\s+/gu, "");
   if (/(同学|学生|几班|班级)/u.test(text)) return false;
   if (/(设计师|建筑师|艺术家|科学家|研究员|创始人|教授|老师|院长|高院|高鹏)/u.test(text)) return true;
+  const subject=personSubject(text);
+  if (subject && !/^(?:设计思维|学院猫|元白|袁白|元白楼|小灯|如意|小海绵)$/u.test(subject)) return true;
   if (/(设计思维|学院猫|元白|袁白|小灯|如意|小海绵|是什么|怎么)/u.test(text)) return false;
   return /^(?:请问)?(?:你知道|你认识|你认得|介绍一下|说说|讲讲)[\p{Script=Han}·]{2,4}(?:吗|呢|是谁)?[？?。!！]*$/u.test(text)
     || /^[\p{Script=Han}·]{2,4}是谁[？?。]*$/u.test(text);
@@ -190,6 +193,7 @@ export function parseSearchSources(payload) {
         url,
         ...(typeof item.title === "string" && item.title.trim() ? { title: item.title.trim().slice(0, 240) } : {}),
         ...(snippets.has(url) ? { snippet: snippets.get(url) } : {}),
+        ...(!snippets.has(url) && typeof item.snippet === "string" ? {snippet:item.snippet.slice(0,600)} : {}),
         ...(typeof item.page_age === "string" && item.page_age.trim() ? { publishedAt: item.page_age.trim().slice(0, 80) } : {}),
       });
       if (sources.length >= DEEPSEEK_SEARCH_MAX_RESULTS) return sources;
@@ -295,23 +299,42 @@ async function transcribe(audioBase64, mimeType, apiKey) {
 }
 
 export async function chat(transcript, history, apiKey, apiBase, model, searchOptions = {}) {
-  const curatedContext = buildCuratedKnowledgeContext(transcript);
+  const adviserAnswer=getCuratedClassAdviserAnswer(transcript);
+  if(adviserAnswer)return {answer:adviserAnswer,webSources:[],webSearchAttempted:false,researchStages:[{stage:'corpus',status:'hit'}]};
+  const personQuery = isPersonKnowledgeQuery(transcript);
+  const personContext = personQuery ? getCuratedPersonContext(transcript) : '';
+  // An unrelated student entry is not evidence about an unknown public person.
+  const curatedContext = personQuery ? personContext : buildCuratedKnowledgeContext(transcript);
   const rosterAnswer = getCuratedStudentNameAnswer(transcript);
   if (rosterAnswer) return { answer: rosterAnswer, webSources: [], webSearchAttempted: false };
   const rosterFallback = getCuratedStudentRosterFallback(transcript);
   if (rosterFallback) return { answer: rosterFallback, webSources: [], webSearchAttempted: false };
   let webSources = [];
   let webSearchAttempted = false;
-  if (shouldUseWebSearch(transcript, searchOptions)) {
+  const researchStages = [{stage:'corpus',status:personContext?'hit':'miss'}];
+  const localAnswerSufficient = personContext && personSubject(transcript)
+    && /认识|知道|听说|介绍|是谁|研究什么|研究领域|研究方向|擅长什么|主要做什么/u.test(transcript)
+    && !SEARCH_CUES.some(cue=>transcript.includes(cue)) && !CURRENT_INFO_PATTERN.test(transcript);
+  if (!localAnswerSufficient && shouldUseWebSearch(transcript, searchOptions)) {
     webSearchAttempted = true;
-    try {
-      webSources = await searchDeepSeek(buildPublicSearchQuery(transcript), apiKey, {
-        ...searchOptions,
-        ...(isPersonKnowledgeQuery(transcript) ? {maxUses: 1} : {}),
-      });
-    } catch (error) {
-      // 联网是增强能力；搜索失败时仍让元白依据本地已核验资料回答，避免一次网络抖动拖垮对话。
-      console.warn("Yuanbai web search unavailable", error?.message || error);
+    const query=buildPublicSearchQuery(transcript);
+    const stages=personQuery ? [`site:design.bnu.edu.cn ${query}`,query] : [query];
+    for (let stage=0;stage<stages.length;stage++) {
+      try {
+        const sources=await searchDeepSeek(stages[stage],apiKey,{...searchOptions,...(personQuery?{maxUses:1}: {})});
+        const subject=personSubject(transcript);
+        webSources=sources.filter(source=>{
+          if(personQuery && stage===0 && new URL(source.url).hostname!=='design.bnu.edu.cn')return false;
+          // A bare link or irrelevant school homepage cannot terminate the cascade.
+          if(personQuery && (!source.snippet || (subject && !`${source.title||''} ${source.snippet}`.includes(subject))))return false;
+          return true;
+        });
+        researchStages.push({stage:personQuery&&stage===0?'school':'web',status:webSources.length?'hit':'miss'});
+        if(webSources.length)break;
+      } catch(error) {
+        researchStages.push({stage:personQuery&&stage===0?'school':'web',status:'error'});
+        console.warn("Yuanbai research stage unavailable",stage,error?.message||error);
+      }
     }
   }
   const webContext = formatWebSearchContext(transcript, webSources);
@@ -350,6 +373,7 @@ export async function chat(transcript, history, apiKey, apiBase, model, searchOp
     answer: String(data.choices?.[0]?.message?.content || "").trim().replace(/^[-*#\s]+/, "").slice(0, 600),
     webSources,
     webSearchAttempted,
+    researchStages,
   };
 }
 
@@ -463,6 +487,7 @@ export async function onRequestPost({ request, env }) {
         answer,
         web_sources: chatResult.webSources,
         web_search_attempted: chatResult.webSearchAttempted,
+        research_stages: chatResult.researchStages,
         web_search_enabled: env.DEEPSEEK_WEB_SEARCH_ENABLED === undefined
           ? true
           : envBoolean(env.DEEPSEEK_WEB_SEARCH_ENABLED),

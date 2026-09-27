@@ -34,19 +34,85 @@ test("public person reaches search and generation; classmates stay local",async 
   const calls=[];
   t.mock.method(globalThis,"fetch",async(url,options)=>{
     const body=JSON.parse(options.body);calls.push({url:String(url),body});
-    if(String(url).endsWith("/messages"))return Response.json({content:[{type:"web_search_tool_result",content:[{type:"web_search_result",url:"https://profiles.stanford.edu/fei-fei-li",title:"Fei-Fei Li",snippet:"Computer vision and human-centered AI"}]}]});
+    if(String(url).endsWith("/messages"))return Response.json({content:[{type:"web_search_tool_result",content:[{type:"web_search_result",url:"https://profiles.stanford.edu/fei-fei-li",title:"李飞飞 Fei-Fei Li",snippet:"Computer vision and human-centered AI"}]}]});
     return Response.json({choices:[{message:{content:"李飞飞研究计算机视觉，也一直关注AI如何帮助人。"}}]});
   });
-  const answer=await chat("你知道李飞飞吗？",[],"test-key",undefined,undefined,{enabled:true});
+  const answer=await chat("李飞飞最近的研究方向有哪些？",[],"test-key",undefined,undefined,{enabled:true});
   assert.equal(answer.webSearchAttempted,true);
-  assert.equal(calls.length,2);
+  assert.equal(calls.length,3);
   assert.equal(calls[0].body.tools[0].max_uses,1);
   assert.match(calls[0].body.messages[0].content[0].text,/design.bnu.edu.cn/);
-  assert.match(calls[1].body.messages[1].content,/不提无关班级/);
+  assert.match(calls[2].body.messages[1].content,/不提无关班级/);
   assert.equal(answer.webSources[0].url,"https://profiles.stanford.edu/fei-fei-li");
   const student=await chat("你知道何任选吗",[],"test-key",undefined,undefined,{enabled:true});
   assert.match(student.answer,/26级1班/);
-  assert.equal(calls.length,2);
+  assert.equal(calls.length,3);
+});
+
+test('口语人物问法触发搜索，缺失学院证据后才查全网',async t=>{
+  for(const q of ['你认不认识原研哉','你知不知道原研哉啊','元白，你认识原研哉吗','有没有听说过原研哉'])assert.equal(shouldUseWebSearch(q),true,q);
+  const calls=[];
+  t.mock.method(globalThis,'fetch',async(url,options)=>{
+    const body=JSON.parse(options.body);calls.push(body);
+    if(String(url).endsWith('/messages')){
+      const school=body.messages[0].content[0].text.includes('site:design.bnu.edu.cn');
+      return Response.json({content:[{type:'web_search_tool_result',content:school?[]:[{type:'web_search_result',url:'https://www.ndc.co.jp/hara/',title:'原研哉',snippet:'原研哉是日本平面设计师。'}]}]});
+    }
+    assert.doesNotMatch(body.messages[1].content,/本届与普通同学的未来侧写|学生名单合成测试资料/);
+    return Response.json({choices:[{message:{content:'原研哉是日本平面设计师。'}}]});
+  });
+  const result=await chat('你认不认识原研哉',[],'key',undefined,undefined,{enabled:true});
+  assert.equal(calls.length,3);
+  assert.match(calls[0].messages[0].content[0].text,/site:design.bnu.edu.cn/);
+  assert.doesNotMatch(calls[1].messages[0].content[0].text,/site:design.bnu.edu.cn/);
+  assert.equal(result.webSources.length,1);
+  assert.doesNotMatch(result.answer,/班|不认识/);
+});
+
+test('已有可靠人物语料直接回答，不做无意义联网',async t=>{
+  let count=0;
+  t.mock.method(globalThis,'fetch',async(url)=>{
+    count++;assert.match(String(url),/chat\/completions$/);
+    return Response.json({choices:[{message:{content:'李飞飞研究计算机视觉。'}}]});
+  });
+  const result=await chat('你知道李飞飞吗',[],'key',undefined,undefined,{enabled:true});
+  assert.equal(count,1);assert.equal(result.webSearchAttempted,false);
+});
+
+test('三个班主任直接命中，老师介绍不走学生姓名兜底',async t=>{
+  const calls=[];
+  t.mock.method(globalThis,'fetch',async(url,options)=>{
+    const body=JSON.parse(options.body);calls.push(body);
+    assert.match(String(url),/chat\/completions$/);
+    return Response.json({choices:[{message:{content:'这位老师有自己的专业研究方向。'}}]});
+  });
+  const all=await chat('我们三个班班主任分别是谁',[],'key');
+  assert.match(all.answer,/1班是詹震宇.*2班是刘亚明.*3班是徐腾飞/);
+  assert.equal(calls.length,0);
+  for(const [name,field,index] of [['詹震宇','视觉传达',1],['刘亚明','适老化',2],['徐腾飞','艺术史论',3]]){
+    const role=await chat(`2026级${index}班班主任是谁`,[],'key');
+    assert.match(role.answer,new RegExp(name));
+    await chat(`你认不认识${name}老师`,[],'key');
+    assert.match(calls.at(-1).messages[1].content,new RegExp(field));
+  }
+});
+
+test('学院官网有对应人物证据就停止继续全网；搜索故障不提前答名单未知',async t=>{
+  for(const failSchool of [false,true]){
+    const calls=[];
+    t.mock.method(console,'warn',()=>{});
+    t.mock.method(globalThis,'fetch',async(url,options)=>{
+      const body=JSON.parse(options.body);calls.push(body);
+      if(String(url).endsWith('/messages')){
+        if(failSchool&&calls.length===1)throw Error('timeout');
+        return Response.json({content:[{type:'web_search_tool_result',content:[{type:'web_search_result',url:'https://design.bnu.edu.cn/example',title:'原研哉讲座',snippet:'原研哉分享设计方法。'}]}]});
+      }
+      return Response.json({choices:[{message:{content:'原研哉谈设计方法。'}}]});
+    });
+    const result=await chat('你认不认识原研哉',[],'key',undefined,undefined,{enabled:true});
+    assert.equal(calls.length,failSchool?3:2);assert.equal(result.webSources.length,1);
+    t.mock.restoreAll();
+  }
 });
 
 test("maps native DeepSeek search blocks into safe evidence sources", () => {

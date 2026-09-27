@@ -53,5 +53,13 @@ test("does not guess when phonetic correction has multiple plausible matches", (
 
 test("does not place teachers into student classes or invent unknown roster entries", () => {
   assert.match(getSyntheticRosterFallback("高鹏院长是几班", roster), /老师不在这届学生里/);
-  assert.match(getSyntheticRosterFallback("你知道不存在的人吗", roster), /不猜/);
+  assert.equal(getSyntheticRosterFallback("你知道不存在的人吗", roster), null);
+  assert.match(getSyntheticRosterFallback("你知道不存在的同学吗", roster), /不猜/);
+});
+
+test("public professions and whole sentences never become fuzzy student fragments",()=>{
+  assert.deepEqual(findSyntheticRosterMatches("你知道设计师李青吗",roster),[]);
+  assert.deepEqual(findSyntheticRosterMatches("是不是有一个很著名的设计师",roster),[]);
+  assert.deepEqual(findSyntheticRosterMatches("你知道陈默阳吗？",roster),[{name:"陈沐阳",class:"26级1班"}]);
+  assert.equal(getSyntheticRosterFallback("你知道李飞飞吗",roster),null);
 });

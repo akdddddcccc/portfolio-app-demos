@@ -32,14 +32,16 @@ export function parseSyntheticRoster(content) {
 export function findSyntheticRosterMatches(query, roster, options = {}) {
   const value = parseSyntheticRoster(roster);
   if (!value) return [];
-  if (/(老师|院长|教授|导师|教师|教职工|工作人员)/.test(String(query || ""))) return [];
+  if (/(老师|院长|教授|导师|教师|教职工|工作人员|高鹏|高院)/.test(String(query || ""))) return [];
+  if (!/(同学|学生|几班|班级)/u.test(query) && /(设计师|建筑师|艺术家|科学家|研究员|企业家|创始人)/u.test(query)) return [];
   const normalizedQuery = normalizeNameQuery(query);
   if (!normalizedQuery) return [];
   const asksGender = options.includeGender === true || /性别|男生|女生|男女/.test(query);
   const exactMatches = value.records.filter(({ name }) => normalizedQuery.includes(name.toLowerCase()));
   if (exactMatches.length) return exactMatches.map((record) => formatMatch(record, asksGender));
 
-  const queryNames = extractNameCandidates(normalizedQuery);
+  // 近音只比对完整短姓名，不从一句设计问题里截取片段冒充同学姓名。
+  const queryNames = normalizedQuery.length >= 2 && normalizedQuery.length <= 4 ? [normalizedQuery] : [];
   if (!queryNames.length) return [];
   const ranked = value.records.map((record) => ({
     record,
@@ -89,8 +91,9 @@ export function getSyntheticRosterAnswer(query, roster) {
 
 function normalizeNameQuery(query) {
   return String(query || "").replace(/\s+/g, "").toLowerCase()
+    .replace(/[^\p{Script=Han}]/gu, "")
     .replace(/^(?:请问|我想问|你知道|你认识|你认得|认识|认得|知道|帮我查一下|查一下)+/u, "")
-    .replace(/(?:这位同学|这个同学|同学|学生|吗|么|呢|呀|啊|是谁|是哪位|的班级|几班|哪个班|哪一班|什么班|班级|性别|男生|女生|男女)+$/u, "")
+    .replace(/(?:(?:是|在)?(?:几班|哪个班|哪一班|什么班)|这位同学|这个同学|同学|学生|吗|么|呢|呀|啊|是谁|是哪位|的班级|班级|性别|男生|女生|男女)+$/u, "")
     .replace(/[^\p{Script=Han}]/gu, "");
 }
 
@@ -139,13 +142,13 @@ export function getSyntheticRosterFallback(query, roster) {
   if (!text) return "我没听清你问的是谁，先不乱猜班级。";
 
   const asksClass = /(几班|哪个班|哪一班|什么班|班级)/.test(text);
-  const asksStaff = /(老师|院长|教授|导师|教师|教职工|工作人员)/.test(text);
+  const asksStaff = /(老师|院长|教授|导师|教师|教职工|工作人员|高鹏|高院)/.test(text);
   if (asksStaff) {
     return asksClass ? "老师不在这届学生里，我就不把老师分到这三个班了。" : null;
   }
 
   const asksPerson = /(你知道|你认识|你认得|认识|认得|是谁|哪位)/.test(text);
-  if (!asksClass && !asksPerson) return null;
+  if (!asksClass && (!asksPerson || !/(同学|学生)/u.test(text))) return null;
   if (!asksClass && !/(同学|学生)/.test(text) && /(学院猫|小灯|如意|小海绵|元白楼)/.test(text)) return null;
 
   const value = parseSyntheticRoster(roster);

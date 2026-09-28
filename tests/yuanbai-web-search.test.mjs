@@ -97,6 +97,20 @@ test('三个班主任直接命中，老师介绍不走学生姓名兜底',async 
   }
 });
 
+test('两轮搜索没有证据时禁止模型编造校园人物或私交',async t=>{
+  const calls=[];
+  t.mock.method(globalThis,'fetch',async(url,options)=>{
+    assert.match(String(url),/messages$/);
+    calls.push(JSON.parse(options.body));
+    return Response.json({content:[]});
+  });
+  const result=await chat('你认不认识袁延哉。',[],'key');
+  assert.equal(calls.length,2);
+  assert.match(calls[0].messages[0].content[0].text,/原研哉/);
+  assert.deepEqual(result.researchStages.map(s=>s.stage),['corpus','school','web']);
+  assert.doesNotMatch(result.answer,/班|老师|项目里|我认得/);
+});
+
 test('学院官网有对应人物证据就停止继续全网；搜索故障不提前答名单未知',async t=>{
   for(const failSchool of [false,true]){
     const calls=[];

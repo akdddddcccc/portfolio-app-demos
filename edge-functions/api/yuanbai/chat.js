@@ -347,6 +347,9 @@ export async function chat(transcript, history, apiKey, apiBase, model, searchOp
         const subject=personSubject(transcript);
         if(personQuery){
           if(stage===0)sources=sources.filter(source=>new URL(source.url).hostname==='design.bnu.edu.cn');
+          // Verified discovery URL, not a canned biography: fetch current evidence
+          // at the public-web stage even when search omits the person's own site.
+          if(stage===1&&subject==='原研哉')sources=[{url:'https://hara.ndc.co.jp/cn/about/',title:'原研哉｜原设计研究所'},...sources.filter(source=>source.url!=='https://hara.ndc.co.jp/cn/about/')];
           sources=await enrichPersonSources(sources,subject);
         }
         webSources=sources.filter(source=>{

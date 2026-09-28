@@ -53,6 +53,7 @@ test('口语人物问法触发搜索，缺失学院证据后才查全网',async 
   for(const q of ['你认不认识原研哉','你知不知道原研哉啊','元白，你认识原研哉吗','有没有听说过原研哉'])assert.equal(shouldUseWebSearch(q),true,q);
   const calls=[];
   t.mock.method(globalThis,'fetch',async(url,options)=>{
+    if(String(url).startsWith('https://hara.ndc.co.jp/'))return new Response('unavailable',{status:503});
     const body=JSON.parse(options.body);calls.push(body);
     if(String(url).endsWith('/messages')){
       const school=body.messages[0].content[0].text.includes('site:design.bnu.edu.cn');
@@ -100,6 +101,7 @@ test('三个班主任直接命中，老师介绍不走学生姓名兜底',async 
 test('两轮搜索没有证据时禁止模型编造校园人物或私交',async t=>{
   const calls=[];
   t.mock.method(globalThis,'fetch',async(url,options)=>{
+    if(String(url).startsWith('https://hara.ndc.co.jp/'))return new Response('unavailable',{status:503});
     assert.match(String(url),/messages$/);
     calls.push(JSON.parse(options.body));
     return Response.json({content:[]});

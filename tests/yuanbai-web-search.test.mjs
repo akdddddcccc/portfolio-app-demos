@@ -57,12 +57,12 @@ test('口语人物问法触发搜索，缺失学院证据后才查全网',async 
     const body=JSON.parse(options.body);calls.push(body);
     if(String(url).endsWith('/messages')){
       const school=body.messages[0].content[0].text.includes('site:design.bnu.edu.cn');
-      return Response.json({content:[{type:'web_search_tool_result',content:school?[]:[{type:'web_search_result',url:'https://www.ndc.co.jp/hara/',title:'原研哉',snippet:'原研哉是日本平面设计师。'}]}]});
+      return Response.json({content:[{type:'web_search_tool_result',content:school?[]:[{type:'web_search_result',url:'https://example.com/designer',title:'深泽直人',snippet:'深泽直人的设计介绍（测试证据）。'}]}]});
     }
     assert.doesNotMatch(body.messages[1].content,/本届与普通同学的未来侧写|学生名单合成测试资料/);
-    return Response.json({choices:[{message:{content:'原研哉是日本平面设计师。'}}]});
+    return Response.json({choices:[{message:{content:'深泽直人的设计介绍。'}}]});
   });
-  const result=await chat('你认不认识原研哉',[],'key',undefined,undefined,{enabled:true});
+  const result=await chat('你认不认识深泽直人',[],'key',undefined,undefined,{enabled:true});
   assert.equal(calls.length,3);
   assert.match(calls[0].messages[0].content[0].text,/site:design.bnu.edu.cn/);
   assert.doesNotMatch(calls[1].messages[0].content[0].text,/site:design.bnu.edu.cn/);
@@ -78,6 +78,21 @@ test('已有可靠人物语料直接回答，不做无意义联网',async t=>{
   });
   const result=await chat('你知道李飞飞吗',[],'key',undefined,undefined,{enabled:true});
   assert.equal(count,1);assert.equal(result.webSearchAttempted,false);
+});
+
+test('原研哉同音识别直接命中核验语料，不纠正用户也不归入学生',async t=>{
+  let count=0;
+  t.mock.method(globalThis,'fetch',async(url,options)=>{
+    count++;assert.match(String(url),/chat\/completions$/);
+    const body=JSON.parse(options.body);
+    assert.match(body.messages[1].content,/无印良品/);
+    assert.match(body.messages[1].content,/设计中的设计/);
+    return Response.json({choices:[{message:{content:'知道，原研哉做过无印良品的艺术指导，也写过《设计中的设计》。'}}]});
+  });
+  const result=await chat('你认不认识袁延哉。',[],'key',undefined,undefined,{enabled:true});
+  assert.equal(count,1);
+  assert.equal(result.webSearchAttempted,false);
+  assert.deepEqual(result.researchStages,[{stage:'corpus',status:'hit'}]);
 });
 
 test('三个班主任直接命中，老师介绍不走学生姓名兜底',async t=>{
@@ -106,9 +121,9 @@ test('两轮搜索没有证据时禁止模型编造校园人物或私交',async 
     calls.push(JSON.parse(options.body));
     return Response.json({content:[]});
   });
-  const result=await chat('你认不认识袁延哉。',[],'key');
+  const result=await chat('你认不认识杉本博司。',[],'key');
   assert.equal(calls.length,2);
-  assert.match(calls[0].messages[0].content[0].text,/原研哉/);
+  assert.match(calls[0].messages[0].content[0].text,/杉本博司/);
   assert.deepEqual(result.researchStages.map(s=>s.stage),['corpus','school','web']);
   assert.doesNotMatch(result.answer,/班|老师|项目里|我认得/);
 });
@@ -137,11 +152,11 @@ test('学院官网有对应人物证据就停止继续全网；搜索故障不�
       const body=JSON.parse(options.body);calls.push(body);
       if(String(url).endsWith('/messages')){
         if(failSchool&&calls.length===1)throw Error('timeout');
-        return Response.json({content:[{type:'web_search_tool_result',content:[{type:'web_search_result',url:'https://design.bnu.edu.cn/example',title:'原研哉讲座',snippet:'原研哉分享设计方法。'}]}]});
+        return Response.json({content:[{type:'web_search_tool_result',content:[{type:'web_search_result',url:'https://design.bnu.edu.cn/example',title:'深泽直人讲座',snippet:'深泽直人分享设计方法（测试证据）。'}]}]});
       }
-      return Response.json({choices:[{message:{content:'原研哉谈设计方法。'}}]});
+      return Response.json({choices:[{message:{content:'深泽直人谈设计方法。'}}]});
     });
-    const result=await chat('你认不认识原研哉',[],'key',undefined,undefined,{enabled:true});
+    const result=await chat('你认不认识深泽直人',[],'key',undefined,undefined,{enabled:true});
     assert.equal(calls.length,failSchool?3:2);assert.equal(result.webSources.length,1);
     t.mock.restoreAll();
   }

@@ -34,6 +34,15 @@ export const YUANBAI_SYSTEM_PROMPT = `你是“元白长者”，熟悉元白楼
 
 const ENTRIES = [
   {
+    id: "kenya-hara-public-profile",
+    title: "原研哉：日常生活、感官与设计",
+    kind: "公开核验资料｜A 本人设计机构介绍",
+    tags: "原研哉 Kenya Hara 设计师 平面设计 无印良品 MUJI 设计中的设计 白 感官 HAPTIC RE-DESIGN",
+    source: "https://hara.ndc.co.jp/cn/about/",
+    verifiedAt: "2026-09-28",
+    content: "原研哉是日本设计师，长期参与无印良品的艺术指导，著有《设计中的设计》和《白》。他策划过RE-DESIGN日常生活主题展览与HAPTIC感官主题展览，关注日常事物和人的感官如何成为设计资源。可以自然地说：知道，原研哉做过无印良品的艺术指导，也写过《设计中的设计》。他常把注意力放回日常，看看熟悉的东西还能不能换一种方式被感受。不要把他当作本届同学或元白项目老师，不虚构他与学院的任职、合作或私人关系。最新职务、项目和活动需要另行核验。",
+  },
+  {
     id: "fei-fei-li-public-profile",
     title: "李飞飞：计算机视觉与以人为本的AI",
     kind: "官方公开事实｜A 大学人物页面",

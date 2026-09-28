@@ -2,6 +2,35 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { audioFormatFromMime, normalizeYuanbaiAsrTranscript, onRequestPost } from "../edge-functions/api/yuanbai/chat.js";
 
+test("successful speech releases its lease before returning audio and records private-free timings", async t => {
+  const logs=[], actions=[];
+  t.mock.method(console,"info",(...args)=>logs.push(args));
+  t.mock.method(globalThis,"fetch",async(url,options)=>{
+    const target=String(url);
+    if(target.endsWith('/claim'))return Response.json({ok:true,claimToken:'private-claim'});
+    if(target.endsWith('/complete')||target.endsWith('/release')){actions.push(target.split('/').pop());return Response.json({ok:true});}
+    if(target.includes('multimodal-generation'))return Response.json({output:{text:'你好'}});
+    if(target.includes('chat/completions')){
+      assert.equal(options.eo.timeoutSetting.readTimeout,40000);
+      return Response.json({choices:[{message:{content:'你好，慢慢说。'}}]});
+    }
+    if(target.includes('SpeechSynthesizer'))return Response.json({output:{audio:'https://audio.example.test/voice.mp3'}});
+    if(target==='https://audio.example.test/voice.mp3')return new Response(new Uint8Array([1,2,3]));
+    throw Error('unexpected URL');
+  });
+  const response=await onRequestPost({request:new Request('https://example.test/api/yuanbai/chat',{
+    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      audio_base64:'cHJpdmF0ZQ==',voice_queue_ticket:'12345678-1234-1234-1234-123456789abc',
+    }),
+  }),env:{DASHSCOPE_API_KEY:'private-api-key',DEEPSEEK_API_KEY:'private-api-key'}});
+  assert.equal(response.status,200);
+  assert.equal((await response.json()).audio_base64,'AQID');
+  assert.deepEqual(actions,['complete','release']);
+  assert.equal(logs[0][1].ok,true);
+  for(const key of ['admission_ms','asr_ms','dialogue_ms','tts_ms','total_ms'])assert.ok(logs[0][1][key]>=0);
+  assert.doesNotMatch(JSON.stringify(logs),/你好|private-|cHJpdmF0ZQ/);
+});
+
 test("silently normalizes Yuanbai ASR homophones without rewriting another person's name", () => {
   assert.equal(normalizeYuanbaiAsrTranscript("高朋院长研究什么？"), "高鹏院长研究什么？");
   assert.equal(normalizeYuanbaiAsrTranscript("你认不认识袁延哉。"), "你认不认识原研哉。");

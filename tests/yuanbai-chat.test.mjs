@@ -4,6 +4,7 @@ import { audioFormatFromMime, normalizeYuanbaiAsrTranscript, onRequestPost } fro
 
 test("silently normalizes Yuanbai ASR homophones without rewriting another person's name", () => {
   assert.equal(normalizeYuanbaiAsrTranscript("高朋院长研究什么？"), "高鹏院长研究什么？");
+  assert.equal(normalizeYuanbaiAsrTranscript("你认不认识袁延哉。"), "你认不认识原研哉。");
   assert.equal(normalizeYuanbaiAsrTranscript("袁白老师，能给我讲讲设计思维吗？"), "元白老师，能给我讲讲设计思维吗？");
   assert.equal(normalizeYuanbaiAsrTranscript("我想回袁白楼看看。"), "我想回元白楼看看。");
   assert.equal(normalizeYuanbaiAsrTranscript("袁白同学的设计作品很有意思。"), "袁白同学的设计作品很有意思。");

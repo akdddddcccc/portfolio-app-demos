@@ -1,5 +1,5 @@
 import { YUANBAI_SYSTEM_PROMPT, buildCuratedKnowledgeContext, getCuratedPersonContext, getCuratedClassAdviserAnswer, getCuratedStudentNameAnswer, getCuratedStudentRosterFallback, hasCuratedStudentMatch } from "../../_shared/yuanbai-knowledge.js";
-import { personSubject } from "../../_shared/yuanbai-person-query.js";
+import { personSubject, normalizePublicPersonQuery } from "../../_shared/yuanbai-person-query.js";
 
 const DASHSCOPE_BASE = "https://dashscope.aliyuncs.com";
 const DEEPSEEK_BASE = "https://api.deepseek.com";
@@ -66,7 +66,7 @@ export function audioFormatFromMime(mimeType) {
  * addresses Yuanbai or names Yuanbai House. Leave standalone person names intact.
  */
 export function normalizeYuanbaiAsrTranscript(transcript) {
-  return String(transcript || "")
+  return normalizePublicPersonQuery(String(transcript || ""))
     .replace(/(?:高朋|高彭|高澎)(?=院长|老师)/gu, "高鹏")
     .replace(/袁白(?=楼)/gu, "元白")
     .replace(/袁白(?=老师)/gu, "元白")
@@ -310,6 +310,7 @@ async function transcribe(audioBase64, mimeType, apiKey) {
 }
 
 export async function chat(transcript, history, apiKey, apiBase, model, searchOptions = {}) {
+  transcript=normalizePublicPersonQuery(transcript);
   const adviserAnswer=getCuratedClassAdviserAnswer(transcript);
   if(adviserAnswer)return {answer:adviserAnswer,webSources:[],webSearchAttempted:false,researchStages:[{stage:'corpus',status:'hit'}]};
   const personQuery = isPersonKnowledgeQuery(transcript);
@@ -349,6 +350,12 @@ export async function chat(transcript, history, apiKey, apiBase, model, searchOp
     }
   }
   const webContext = formatWebSearchContext(transcript, webSources);
+  if(personQuery && !personContext && !webSources.length) {
+    return {
+      answer:'这个名字背后的具体经历，我现在还不能确定。关于他是谁、做过什么，我得有把握了再讲。',
+      webSources,webSearchAttempted,researchStages,
+    };
+  }
   const webSearchStatus = webSearchAttempted
     ? webSources.length
       ? `[联网检索状态：已完成，收到${webSources.length}条可用来源]`

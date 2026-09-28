@@ -1,3 +1,4 @@
+import {timedRequest} from './yuanbai-request.js';
 const UPSTREAM = "http://123.56.162.88/yuanbai-queue/api/yuanbai/voice-queue/";
 const ALLOWED_ORIGINS = new Set([
   "https://apps-demo.muyang23333.top",
@@ -18,11 +19,10 @@ export async function proxyVoiceQueue({request}, route, fetcher = fetch) {
   const ticket = typeof data.ticket === "string" ? data.ticket : "";
   if (route !== "join" && !/^[a-f0-9-]{36}$/i.test(ticket)) return json({ok:false,error:"排队凭据无效"},400);
   try {
-    const response = await fetcher(new URL(route, UPSTREAM), {
+    const {response, body: text} = await timedRequest(new URL(route, UPSTREAM), {
       method:"POST", headers:{Origin:"https://apps-demo.muyang23333.top","Content-Type":"application/json"},
       body:JSON.stringify(route === "join" ? {} : {ticket}), redirect:"error",
-    });
-    const text = await response.text();
+    }, '排队服务', 5000, r => r.text(), fetcher);
     let result;
     try { result = JSON.parse(text); } catch { return json({ok:false,error:"排队服务暂时没有回应。"},503); }
     return json(result,response.status);

@@ -1,5 +1,6 @@
 import { YUANBAI_SYSTEM_PROMPT, buildCuratedKnowledgeContext, getCuratedPersonContext, getCuratedClassAdviserAnswer, getCuratedStudentNameAnswer, getCuratedStudentRosterFallback, hasCuratedStudentMatch } from "../../_shared/yuanbai-knowledge.js";
 import { personSubject, normalizePublicPersonQuery } from "../../_shared/yuanbai-person-query.js";
+import { timedRequest } from "../../_shared/yuanbai-request.js";
 
 const DASHSCOPE_BASE = "https://dashscope.aliyuncs.com";
 const DEEPSEEK_BASE = "https://api.deepseek.com";
@@ -75,8 +76,8 @@ export function normalizeYuanbaiAsrTranscript(transcript) {
 
 async function fetchJson(url, options, serviceName) {
   try {
-    const response = await fetch(url, options);
-    const text = await response.text();
+    const budget = {"语音识别": 25000, "对话生成": 40000, "语音合成": 35000}[serviceName] || 15000;
+    const {response, body: text} = await timedRequest(url, options, serviceName, budget);
     let data;
     try {
       data = JSON.parse(text);
@@ -451,13 +452,13 @@ async function synthesize(text, apiKey, model, voice) {
     throw error;
   }
   try {
-    const audioResponse = await fetch(audioUrl);
+    const {response: audioResponse, body: audioBuffer} = await timedRequest(audioUrl, {}, "语音文件下载", 15000, r => r.arrayBuffer());
     if (!audioResponse.ok) {
       const error = new Error("生成的声音文件下载失败");
       error.upstreamStatus = audioResponse.status;
       throw error;
     }
-    return arrayBufferToBase64(await audioResponse.arrayBuffer());
+    return arrayBufferToBase64(audioBuffer);
   } catch (error) {
     if (error && typeof error === "object") error.stage = "语音文件下载";
     throw error;
@@ -471,6 +472,13 @@ export async function onRequestOptions({ request }) {
 export async function onRequestPost({ request, env }) {
   let queueLease;
   let answered = false;
+  const startedAt = Date.now();
+  const timings = {};
+  const measure = async (name, work) => {
+    const start = Date.now();
+    try { return await work(); }
+    finally { timings[name] = Date.now() - start; }
+  };
   const origin = request.headers.get("Origin") || "";
   if (origin && !ALLOWED_ORIGINS.has(origin) && !/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)) {
     return jsonResponse({ ok: false, error: "当前来源不能调用元白服务。" }, 403, origin);
@@ -491,25 +499,25 @@ export async function onRequestPost({ request, env }) {
     if (!/^[a-f0-9-]{36}$/i.test(queueTicket)) {
       return jsonResponse({ok:false,error:"请先进入等候队列，再开始对话。"},429,origin);
     }
-    const queueResponse = await fetch(`${VOICE_QUEUE_BASE}claim`, {
+    const {response: queueResponse, body: queueBody} = await measure("admission_ms", () => timedRequest(`${VOICE_QUEUE_BASE}claim`, {
       method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({ticket:queueTicket}),redirect:"error",
-    });
+    }, "排队确认", 5000));
     if (!queueResponse.ok) {
       let queueError;
-      try { queueError = await queueResponse.json(); } catch {}
+      try { queueError = JSON.parse(queueBody); } catch {}
       return jsonResponse({ok:false,error:queueError?.error||"排队服务暂时未能回应，请稍后再试。"},[409,410,429].includes(queueResponse.status)?queueResponse.status:503,origin);
     }
-    const admission = await queueResponse.json();
+    const admission = JSON.parse(queueBody);
     if (!admission.ok || !admission.claimToken) throw new Error("这次等候已失效，请重新试一次。");
     queueLease = {ticket:queueTicket,claimToken:admission.claimToken};
 
     const transcript = normalizeYuanbaiAsrTranscript(
-      await transcribe(audioBase64, body.mime_type, env.DASHSCOPE_API_KEY),
+      await measure("asr_ms", () => transcribe(audioBase64, body.mime_type, env.DASHSCOPE_API_KEY)),
     );
     if (!transcript) return jsonResponse({ ok: false, error: "我没有听清，请靠近麦克风再说一次。" }, 422, origin);
 
-    const chatResult = await chat(
+    const chatResult = await measure("dialogue_ms", () => chat(
       transcript,
       cleanHistory(body.history),
       env.DEEPSEEK_API_KEY,
@@ -525,18 +533,18 @@ export async function onRequestPost({ request, env }) {
         apiVersion: env.DEEPSEEK_SEARCH_API_VERSION,
         maxUses: env.DEEPSEEK_SEARCH_MAX_USES,
         maxTokens: env.DEEPSEEK_SEARCH_MAX_TOKENS,
-        timeoutMs: env.DEEPSEEK_SEARCH_TIMEOUT_MS,
+        timeoutMs: Math.min(12000, positiveInteger(env.DEEPSEEK_SEARCH_TIMEOUT_MS, 12000)),
       },
-    );
+    ));
     const answer = chatResult.answer;
     if (!answer) throw new Error("对话生成没有返回内容");
 
-    const audioBase64Result = await synthesize(
+    const audioBase64Result = await measure("tts_ms", () => synthesize(
       answer,
       env.DASHSCOPE_API_KEY,
       env.YUANBAI_TTS_MODEL,
       env.YUANBAI_TTS_VOICE_ID,
-    );
+    ));
 
     answered = true;
     return jsonResponse(
@@ -565,13 +573,15 @@ export async function onRequestPost({ request, env }) {
       request_id: error?.requestId || null,
       error_name: error?.name || "Error",
     });
-    return jsonResponse({ ok: false, error: error?.message || "元白暂时没有回答成功，请再试一次。" }, 502, origin);
+    return jsonResponse({ ok: false, error: error?.message || "元白暂时没有回答成功，请再试一次。" }, error?.name === "TimeoutError" ? 504 : 502, origin);
   } finally {
     if (queueLease) {
       try {
-        await fetch(`${VOICE_QUEUE_BASE}complete`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(queueLease),redirect:"error"});
-        if (!answered) await fetch(`${VOICE_QUEUE_BASE}release`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket:queueLease.ticket}),redirect:"error"});
+        await timedRequest(`${VOICE_QUEUE_BASE}complete`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(queueLease),redirect:"error"}, "队列完成", 4000);
+        await timedRequest(`${VOICE_QUEUE_BASE}release`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket:queueLease.ticket}),redirect:"error"}, "队列释放", 4000);
       } catch { console.warn("Yuanbai queue completion unavailable; lease will expire"); }
+      // Aggregate timings only: never log transcripts, audio, keys or tickets.
+      console.info("Yuanbai request timing", {ok: answered, ...timings, total_ms: Date.now() - startedAt});
     }
   }
 }

@@ -472,6 +472,7 @@ export async function onRequestOptions({ request }) {
 export async function onRequestPost({ request, env }) {
   let queueLease;
   let answered = false;
+  let failure = {};
   const startedAt = Date.now();
   const timings = {};
   const measure = async (name, work) => {
@@ -566,6 +567,7 @@ export async function onRequestPost({ request, env }) {
     );
   } catch (error) {
     // Keep provider diagnostics without logging prompts, audio, API keys or answers.
+    failure = {stage: error?.stage || "请求处理", upstream_status: Number.isInteger(error?.upstreamStatus) ? error.upstreamStatus : null, error_name: error?.name || "Error"};
     console.error("Yuanbai request failed", {
       stage: error?.stage || "请求处理",
       upstream_status: Number.isInteger(error?.upstreamStatus) ? error.upstreamStatus : null,
@@ -577,7 +579,10 @@ export async function onRequestPost({ request, env }) {
   } finally {
     if (queueLease) {
       try {
-        await timedRequest(`${VOICE_QUEUE_BASE}complete`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(queueLease),redirect:"error"}, "队列完成", 4000);
+        // EdgeOne Makers currently does not expose Edge Function console logs.
+        // Send an allowlisted summary to our existing queue service's journal.
+        const diagnostics = {ok: answered, ...timings, total_ms: Date.now()-startedAt, ...failure};
+        await timedRequest(`${VOICE_QUEUE_BASE}complete`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...queueLease,diagnostics}),redirect:"error"}, "队列完成", 4000);
         await timedRequest(`${VOICE_QUEUE_BASE}release`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket:queueLease.ticket}),redirect:"error"}, "队列释放", 4000);
       } catch { console.warn("Yuanbai queue completion unavailable; lease will expire"); }
       // Aggregate timings only: never log transcripts, audio, keys or tickets.

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chat, buildPublicSearchQuery } from "../edge-functions/api/yuanbai/chat.js";
+import { chat, buildPublicSearchQuery, enrichPersonSources } from "../edge-functions/api/yuanbai/chat.js";
 import {
   formatWebSearchContext,
   parseSearchSources,
@@ -109,6 +109,22 @@ test('两轮搜索没有证据时禁止模型编造校园人物或私交',async 
   assert.match(calls[0].messages[0].content[0].text,/原研哉/);
   assert.deepEqual(result.researchStages.map(s=>s.stage),['corpus','school','web']);
   assert.doesNotMatch(result.answer,/班|老师|项目里|我认得/);
+});
+
+test('原生搜索只有链接时读取可信正文，禁止抓取任意地址',async t=>{
+  const urls=[];
+  t.mock.method(globalThis,'fetch',async url=>{
+    urls.push(url);
+    return new Response('<html><script>不能采用的脚本</script><p>原 研哉 是设计师，著有设计中的设计。</p></html>',{headers:{'Content-Type':'text/html'}});
+  });
+  const sources=await enrichPersonSources([
+    {url:'https://hara.ndc.co.jp/cn/about/',title:'原研哉'},
+    {url:'http://127.0.0.1/private'},
+    {url:'https://ndc.co.jp.evil.example/private'},
+  ],'原研哉');
+  assert.deepEqual(urls,['https://hara.ndc.co.jp/cn/about/']);
+  assert.match(sources[0].snippet,/原研哉是设计师/);
+  assert.doesNotMatch(sources[0].snippet,/不能采用的脚本/);
 });
 
 test('学院官网有对应人物证据就停止继续全网；搜索故障不提前答名单未知',async t=>{

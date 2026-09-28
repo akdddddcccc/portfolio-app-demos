@@ -217,6 +217,27 @@ export function formatWebSearchContext(query, sources) {
   ].join("\n");
 }
 
+// Some native search responses contain links but no excerpts. Read a bounded
+// amount of the linked institutional/encyclopedia page before treating it as evidence.
+export async function enrichPersonSources(sources,subject) {
+  const trusted=['bnu.edu.cn','ndc.co.jp','wikipedia.org','baike.baidu.com','stanford.edu'];
+  const allowed=value=>{try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password&&!u.port&&trusted.some(host=>u.hostname===host||u.hostname.endsWith('.'+host));}catch{return false;}};
+  const candidates=sources.filter(source=>source.snippet||allowed(source.url)).slice(0,3);
+  return Promise.all(candidates.map(async source=>{
+    if(source.snippet)return source;
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),4000);
+    try{
+      const response=await fetch(source.url,{signal:controller.signal,redirect:'error',headers:{Accept:'text/html'}});
+      if(!response.ok||!response.headers.get('content-type')?.includes('text/html'))return source;
+      const reader=response.body.getReader(),decoder=new TextDecoder();let html='',size=0;
+      try{while(size<196608){const {done,value}=await reader.read();if(done)break;const part=value.subarray(0,196608-size);size+=part.length;html+=decoder.decode(part,{stream:true});}}finally{await reader.cancel();}
+      const text=html.replace(/<(script|style)[\s\S]*?<\/\1>/gi,' ').replace(/<[^>]*>/g,' ').replace(/&(?:nbsp|amp|quot|lt|gt);/g,' ').replace(/\s+/gu,'');
+      const index=subject?text.indexOf(subject):0;
+      return index<0?source:{...source,snippet:text.slice(Math.max(0,index-50),index+1250)};
+    }catch{return source;}finally{clearTimeout(timer);}
+  }));
+}
+
 export async function searchDeepSeek(query, apiKey, options = {}) {
   const searchQuery = cleanSearchQuery(query);
   if (!searchQuery) return [];
@@ -322,8 +343,12 @@ export async function chat(transcript, history, apiKey, apiBase, model, searchOp
     const stages=personQuery ? [`site:design.bnu.edu.cn ${query}`,query] : [query];
     for (let stage=0;stage<stages.length;stage++) {
       try {
-        const sources=await searchDeepSeek(stages[stage],apiKey,{...searchOptions,...(personQuery?{maxUses:1}: {})});
+        let sources=await searchDeepSeek(stages[stage],apiKey,{...searchOptions,...(personQuery?{maxUses:1}: {})});
         const subject=personSubject(transcript);
+        if(personQuery){
+          if(stage===0)sources=sources.filter(source=>new URL(source.url).hostname==='design.bnu.edu.cn');
+          sources=await enrichPersonSources(sources,subject);
+        }
         webSources=sources.filter(source=>{
           if(personQuery && stage===0 && new URL(source.url).hostname!=='design.bnu.edu.cn')return false;
           // A bare link or irrelevant school homepage cannot terminate the cascade.

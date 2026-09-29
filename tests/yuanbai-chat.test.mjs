@@ -97,6 +97,10 @@ test("provider failure completes and releases the admission lease", async t => {
   });
   assert.equal(response.status, 502);
   assert.equal(calls[0].action, "claim");
+  const completion=calls.find(call=>call.action==='complete');
+  assert.equal(completion.body.diagnostics.ok,false);
+  assert.equal(completion.body.diagnostics.stage,'语音识别');
+  delete completion.body.diagnostics;
   assert.deepEqual(calls.slice(-2), [
     { action: "complete", body: { ticket, claimToken: "server-only-token" } },
     { action: "release", body: { ticket } },

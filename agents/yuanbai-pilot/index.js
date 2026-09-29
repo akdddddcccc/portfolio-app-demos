@@ -11,8 +11,11 @@ const json = (body, status = 200) => Response.json(body, {
 export async function onRequest(context) {
   const { request, env = {} } = context;
   const url = new URL(request.url);
-  const origin = request.headers.get('Origin');
-  if ((origin && origin !== url.origin) || request.headers.get('Sec-Fetch-Site') === 'cross-site') {
+  // AgentContextRequest has a plain header record and an already parsed body,
+  // unlike the standard Web Request passed to Edge Functions (@edgeone/types).
+  const incomingHeaders = new Headers(request.headers);
+  const origin = incomingHeaders.get('Origin');
+  if ((origin && origin !== url.origin) || incomingHeaders.get('Sec-Fetch-Site') === 'cross-site') {
     return json({ ok: false, error: '请在同一测试站点内调用。' }, 403);
   }
   if (request.method === 'GET') {
@@ -23,23 +26,30 @@ export async function onRequest(context) {
   if (request.method !== 'POST') return json({ ok: false, error: '仅支持 GET / POST' }, 405);
 
   // Bound input before parsing/copying; keep the existing 1 MB audio envelope.
-  const reader = request.body?.getReader();
-  if (!reader) return json({ ok: false, error: '请求内容为空' }, 400);
+  const reader = request.body?.getReader?.();
+  if (request.body == null) return json({ ok: false, error: '请求内容为空' }, 400);
   const chunks = [];
   let size = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > 1_000_000) {
-      await reader.cancel();
-      return json({ ok: false, error: '录音过大，请使用更短的录音。' }, 413);
+  if (reader) {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 1_000_000) {
+        await reader.cancel();
+        return json({ ok: false, error: '录音过大，请使用更短的录音。' }, 413);
+      }
+      chunks.push(value);
     }
-    chunks.push(value);
+  } else {
+    if (typeof request.body !== 'object' || Array.isArray(request.body)) return json({ok:false,error:'需要 JSON 对象'},400);
+    const encoded = new TextEncoder().encode(JSON.stringify(request.body));
+    if (encoded.byteLength > 1_000_000) return json({ok:false,error:'录音过大，请使用更短的录音。'},413);
+    chunks.push(encoded);
   }
   // Preview domains vary by deployment. Validate same-origin above, then remove
   // Origin ONLY on the internal request; production's allowlist stays untouched.
-  const headers = new Headers(request.headers);
+  const headers = incomingHeaders;
   headers.delete('Origin');
   headers.delete('Content-Length');
   const internal = new Request(url, { method: 'POST', headers, body: new Blob(chunks), signal: request.signal });

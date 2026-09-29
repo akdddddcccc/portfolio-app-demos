@@ -5,13 +5,16 @@ import { onRequest } from '../agents/yuanbai-pilot/index.js';
 const origin = 'https://pilot.example.test';
 const env = { DASHSCOPE_API_KEY: 'private-key', DEEPSEEK_API_KEY: 'private-key' };
 const ticket = '12345678-1234-1234-1234-123456789abc';
-const post = (body, action = 'chat', source = origin) => new Request(`${origin}/yuanbai-pilot?action=${action}`, {
-  method: 'POST', headers: { Origin: source, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+// Match @edgeone/types AgentContextRequest, not an Edge Function Web Request.
+const post = (body, action = 'chat', source = origin) => ({
+  url: `${origin}/yuanbai-pilot?action=${action}`, method: 'POST',
+  headers: { origin: source, 'content-type': 'application/json' }, body,
+  signal: new AbortController().signal,
 });
 
 test('health reports configuration without contacting models or exposing keys', async t => {
   t.mock.method(globalThis, 'fetch', () => { throw Error('unexpected network'); });
-  const response = await onRequest({ request: new Request(`${origin}/yuanbai-pilot`), env });
+  const response = await onRequest({ request: {url:`${origin}/yuanbai-pilot`,method:'GET',headers:{},body:null}, env });
   const body = await response.text();
   assert.equal(response.status, 200);
   assert.doesNotMatch(body, /private-key/);

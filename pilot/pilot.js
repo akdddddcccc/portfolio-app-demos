@@ -1,10 +1,14 @@
 const $ = id => document.getElementById(id);
 const endpoint = '/yuanbai-pilot';
+// Makers validates this header before dispatching even a health/queue request.
+// One page visit is one isolated runtime conversation; no persistent user ID.
+const conversationId = crypto.randomUUID();
 let history = [], audioUrl;
 async function request(action, body) {
   const response = await fetch(`${endpoint}${action ? `?action=${action}` : ''}`, {
     method: body === undefined ? 'GET' : 'POST',
-    headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+    headers: { 'makers-conversation-id': conversationId,
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(action === 'chat' ? 175000 : 15000),
   });

@@ -7,6 +7,7 @@
 
 - 测试页面：预览域名 `/yuanbai-agent-test/`
 - Agent：`GET /yuanbai-pilot` 无模型健康检查；`POST /yuanbai-pilot` 运行原有语音链路。
+- 所有 Agent 请求（包括 GET）必须携带 `makers-conversation-id`；测试页每次打开生成一个 UUID，服务端平台在入口前校验该请求头。
 - 排队：同一路径 `?action=join|status|release`，连接现有四路 FIFO 服务。
 - 正式入口 `/api/yuanbai/chat`、游戏、模型资产和子模块指针均未修改。
 

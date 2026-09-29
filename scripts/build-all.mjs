@@ -61,6 +61,9 @@ const html = `<!doctype html>
 fs.writeFileSync(path.join(outputRoot, "index.html"), html);
 fs.writeFileSync(path.join(outputRoot, "apps.json"), `${JSON.stringify(registry, null, 2)}\n`);
 
+// Isolated pilot page; never changes the production dialogue route or assets.
+fs.cpSync(path.join(repoRoot, "pilot"), path.join(outputRoot, "yuanbai-agent-test"), { recursive: true });
+
 console.log(`\nBuilt ${registry.apps.length} app(s) into ${outputRoot}`);
 
 function escapeHtml(value) {

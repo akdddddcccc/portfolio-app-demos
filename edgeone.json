@@ -2,5 +2,9 @@
   "installCommand": "npm ci && git submodule sync --recursive && git submodule update --init --recursive && node scripts/install-all.mjs",
   "buildCommand": "node scripts/build-all.mjs",
   "outputDirectory": "./dist",
-  "nodeVersion": "22.11.0"
+  "nodeVersion": "22.11.0",
+  "agents": {
+    "dir": "agents",
+    "timeout": 170
+  }
 }

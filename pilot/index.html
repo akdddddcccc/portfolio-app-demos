@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>元白 · Agent 测试分支</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#101111;color:#eeece6}body{max-width:740px;margin:40px auto;padding:0 20px;line-height:1.7}h1{font-size:28px}section{padding:24px;background:#1b1e1c;border:1px solid #343a34;border-radius:12px;margin:20px 0}button,input{font:inherit;max-width:100%}button{padding:10px 18px;cursor:pointer;margin:8px 8px 8px 0;border:1px solid #666;border-radius:6px}button:disabled{opacity:.45;cursor:wait}pre{white-space:pre-wrap;overflow-wrap:anywhere}small,p{color:#b9c0b5}audio{width:100%}label{display:block}
+</style>
+<h1>元白 · Makers Agent 测试</h1>
+<p>独立测试入口，保留当前人格、音色和语速。与正式版共用四路排队名额。上传后才调用模型，不会自动播放声音。</p>
+<section><button id="health">检查运行环境（不调用模型）</button><pre id="healthResult" aria-live="polite">尚未检查</pre></section>
+<section><label for="file">选择一段短录音（MP3 / WAV / WebM / M4A，最大 580 KB）</label><input type="file" id="file" accept="audio/*">
+<button id="run">提交测试</button><pre id="status" role="status">准备就绪</pre><div id="answer"></div><audio id="audio" controls hidden preload="none"></audio></section>
+<small>页面仅在本次打开期间保留对话上下文。刷新会清除。测试共享模型额度，请勿用自动循环反复提交。</small>
+<script type="module" src="./pilot.js"></script></html>

@@ -1,4 +1,4 @@
-import { YUANBAI_SYSTEM_PROMPT, buildCuratedKnowledgeContext, getCuratedPersonContext, getCuratedClassAdviserAnswer, getCuratedStudentNameAnswer, getCuratedStudentRosterFallback, hasCuratedStudentMatch } from "../../_shared/yuanbai-knowledge.js";
+import { YUANBAI_SYSTEM_PROMPT, buildCuratedKnowledgeContext, getCuratedPersonContext, publicStudentBoundary } from "../../_shared/yuanbai-public-knowledge.js";
 import { personSubject, normalizePublicPersonQuery } from "../../_shared/yuanbai-person-query.js";
 import { timedRequest } from "../../_shared/yuanbai-request.js";
 
@@ -26,22 +26,25 @@ const ALLOWED_ORIGINS = new Set([
   "https://www.muyang23333.top",
 ]);
 
-function corsHeaders(origin) {
+function allowedOrigin(origin, env = {}) {
+  return ALLOWED_ORIGINS.has(origin) || String(env.YUANBAI_ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean).includes(origin);
+}
+function corsHeaders(origin, env = {}) {
   return {
-    "Access-Control-Allow-Origin": ALLOWED_ORIGINS.has(origin) ? origin : "https://apps-demo.muyang23333.top",
+    "Access-Control-Allow-Origin": allowedOrigin(origin, env) ? origin : "https://apps-demo.muyang23333.top",
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     Vary: "Origin",
   };
 }
 
-function jsonResponse(data, status = 200, origin = "") {
+function jsonResponse(data, status = 200, origin = "", env = {}) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "Content-Type": "application/json; charset=UTF-8",
       "Cache-Control": "no-store",
-      ...corsHeaders(origin),
+      ...corsHeaders(origin, env),
     },
   });
 }
@@ -137,7 +140,9 @@ export function shouldUseWebSearch(query, options = {}) {
   const text = String(query || "").trim();
   if (!text || text.length < 2) return false;
   if (options.enabled === false) return false;
-  if (/(同学|学生|几班|哪个班|哪一班|班级)/u.test(text) || hasCuratedStudentMatch(text)) return false;
+  if (publicStudentBoundary(text)) return false;
+  if (isPersonKnowledgeQuery(text) && !getCuratedPersonContext(text) && !/(老师|教授|院长|设计师|建筑师|艺术家|科学家|研究员)/u.test(text)) return false;
+  if (/(同学|学生|几班|哪个班|哪一班|班级)/u.test(text)) return false;
   if (options.mode === "always") return !SEARCH_BLOCKERS.some((cue) => text.includes(cue));
   if (SEARCH_BLOCKERS.some((cue) => text.includes(cue))) return false;
   return SEARCH_CUES.some((cue) => text.includes(cue))
@@ -150,7 +155,7 @@ export function isPersonKnowledgeQuery(query) {
   if (/(同学|学生|几班|班级)/u.test(text)) return false;
   if (/(设计师|建筑师|艺术家|科学家|研究员|创始人|教授|老师|院长|高院|高鹏)/u.test(text)) return true;
   const subject=personSubject(text);
-  if (subject && !/^(?:设计思维|学院猫|元白|袁白|元白楼|小灯|如意|小海绵)$/u.test(subject)) return true;
+  if (subject && !/^(?:设计思维|未来设计学院|学院|元白项目|学院猫|元白|袁白|元白楼|小灯|如意|小海绵)$/u.test(subject)) return true;
   if (/(设计思维|学院猫|元白|袁白|小灯|如意|小海绵|是什么|怎么)/u.test(text)) return false;
   return /^(?:请问)?(?:你知道|你认识|你认得|介绍一下|说说|讲讲)[\p{Script=Han}·]{2,4}(?:吗|呢|是谁)?[？?。!！]*$/u.test(text)
     || /^[\p{Script=Han}·]{2,4}是谁[？?。]*$/u.test(text);
@@ -333,16 +338,15 @@ async function transcribe(audioBase64, mimeType, apiKey) {
 
 export async function chat(transcript, history, apiKey, apiBase, model, searchOptions = {}) {
   transcript=normalizePublicPersonQuery(transcript);
-  const adviserAnswer=getCuratedClassAdviserAnswer(transcript);
-  if(adviserAnswer)return {answer:adviserAnswer,webSources:[],webSearchAttempted:false,researchStages:[{stage:'corpus',status:'hit'}]};
+  const boundary = publicStudentBoundary(transcript);
+  if (boundary) return { answer: boundary, webSources: [], webSearchAttempted: false };
   const personQuery = isPersonKnowledgeQuery(transcript);
   const personContext = personQuery ? getCuratedPersonContext(transcript) : '';
   // An unrelated student entry is not evidence about an unknown public person.
   const curatedContext = personQuery ? personContext : buildCuratedKnowledgeContext(transcript);
-  const rosterAnswer = getCuratedStudentNameAnswer(transcript);
-  if (rosterAnswer) return { answer: rosterAnswer, webSources: [], webSearchAttempted: false };
-  const rosterFallback = getCuratedStudentRosterFallback(transcript);
-  if (rosterFallback) return { answer: rosterFallback, webSources: [], webSearchAttempted: false };
+  if (personQuery && !personContext && !/(老师|教授|院长|设计师|建筑师|艺术家|科学家|研究员)/u.test(transcript)) {
+    return { answer: '如果你想了解学院教师，可以告诉我姓名和研究方向，我会围绕公开介绍回答。涉及同学的个人信息，请联系学院相关老师。', webSources: [], webSearchAttempted: false };
+  }
   let webSources = [];
   let webSearchAttempted = false;
   const researchStages = [{stage:'corpus',status:personContext?'hit':'miss'}];
@@ -381,7 +385,7 @@ export async function chat(transcript, history, apiKey, apiBase, model, searchOp
   const webContext = formatWebSearchContext(transcript, webSources);
   if(personQuery && !personContext && !webSources.length) {
     return {
-      answer:'这个名字背后的具体经历，我现在还不能确定。关于他是谁、做过什么，我得有把握了再讲。',
+      answer:'这位教师或研究者的具体介绍还需要核对。学院教师的研究方向与经历，可以从学院官网的师资页面确认；你也可以提供公开介绍，我们一起看。',
       webSources,webSearchAttempted,researchStages,
     };
   }
@@ -391,7 +395,7 @@ export async function chat(transcript, history, apiKey, apiBase, model, searchOp
       : "[联网检索状态：已发起，但当前没有收到可引用的来源；不要把本次回答说成刚刚查到网页]"
     : "";
   const knowledgeContext = [
-    "下面是与你们谈话有关的记忆和线索。直接用元白的口吻回答，不要向对方讲内部整理方式或记忆从哪里调取；记不准时坦率但自然地说出来。人物问题先区分同学、学院老师和公众人物：学生名单没有匹配不等于不认识公众人物，不提无关班级。设计或AI领域人物用两三句话讲清身份、一个代表方向或成果，以及与问题相关的启发。李飞飞等AI研究者不能因讨论设计就被称为设计师。默认不说‘网上查到’‘根据公开资料’‘语料库里’，不主动报出处；用户追问来源或检索能力时如实说明。表达可以像熟悉的知识，但不编造亲历、私交或确定性。检索失败不等于人物不存在；身份没有可靠依据时承认具体不确定处。",
+    "下面是与你们谈话有关的记忆和线索。直接用元白的口吻回答，不要向对方讲内部整理方式或记忆从哪里调取；记不准时坦率但自然地说出来。人物问题先区分同学、学院老师和公众人物：不查询学生名单，不介绍同学个人信息，不提无关班级。设计或AI领域人物用两三句话讲清身份、一个代表方向或成果，以及与问题相关的启发。李飞飞等AI研究者不能因讨论设计就被称为设计师。默认不说‘网上查到’‘根据公开资料’‘语料库里’，不主动报出处；用户追问来源或检索能力时如实说明。表达可以像熟悉的知识，但不编造亲历、私交或确定性。检索失败不等于人物不存在；身份没有可靠依据时承认具体不确定处。",
     curatedContext,
     webSearchStatus,
     webContext,
@@ -465,8 +469,8 @@ async function synthesize(text, apiKey, model, voice) {
   }
 }
 
-export async function onRequestOptions({ request }) {
-  return new Response(null, { status: 204, headers: corsHeaders(request.headers.get("Origin") || "") });
+export async function onRequestOptions({ request, env = {} }) {
+  return new Response(null, { status: 204, headers: corsHeaders(request.headers.get("Origin") || "", env) });
 }
 
 export async function onRequestPost({ request, env }) {
@@ -481,24 +485,26 @@ export async function onRequestPost({ request, env }) {
     finally { timings[name] = Date.now() - start; }
   };
   const origin = request.headers.get("Origin") || "";
-  if (origin && !ALLOWED_ORIGINS.has(origin) && !/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)) {
-    return jsonResponse({ ok: false, error: "当前来源不能调用元白服务。" }, 403, origin);
+  if (origin && !allowedOrigin(origin, env) && !/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)) {
+    return jsonResponse({ ok: false, error: "当前来源不能调用元白服务。" }, 403, origin, env);
   }
 
   if (!env.DASHSCOPE_API_KEY || !env.DEEPSEEK_API_KEY) {
-    return jsonResponse({ ok: false, error: "元白网页的云端密钥尚未配置。" }, 503, origin);
+    return jsonResponse({ ok: false, error: "元白网页的云端密钥尚未配置。" }, 503, origin, env);
   }
 
   try {
     const body = await request.json();
+    const typedText = typeof body.text === 'string' ? body.text.trim() : '';
+    if (typedText.length > 600) return jsonResponse({ok:false,error:'每次最多输入600字。'},413,origin,env);
     const audioBase64 = typeof body.audio_base64 === "string" ? body.audio_base64.trim() : "";
-    if (!audioBase64) return jsonResponse({ ok: false, error: "没有收到录音。" }, 400, origin);
+    if (!audioBase64 && !typedText) return jsonResponse({ ok: false, error: "请输入问题或录制语音。" }, 400, origin, env);
     if (audioBase64.length > MAX_AUDIO_BASE64_LENGTH) {
-      return jsonResponse({ ok: false, error: "这段录音太长了，请分成两次说。" }, 413, origin);
+      return jsonResponse({ ok: false, error: "这段录音太长了，请分成两次说。" }, 413, origin, env);
     }
     const queueTicket = typeof body.voice_queue_ticket === "string" ? body.voice_queue_ticket : "";
     if (!/^[a-f0-9-]{36}$/i.test(queueTicket)) {
-      return jsonResponse({ok:false,error:"请先进入等候队列，再开始对话。"},429,origin);
+      return jsonResponse({ok:false,error:"请先进入等候队列，再开始对话。"},429,origin,env);
     }
     const {response: queueResponse, body: queueBody} = await measure("admission_ms", () => timedRequest(`${VOICE_QUEUE_BASE}claim`, {
       method:"POST",headers:{"Content-Type":"application/json"},
@@ -507,16 +513,16 @@ export async function onRequestPost({ request, env }) {
     if (!queueResponse.ok) {
       let queueError;
       try { queueError = JSON.parse(queueBody); } catch {}
-      return jsonResponse({ok:false,error:queueError?.error||"排队服务暂时未能回应，请稍后再试。"},[409,410,429].includes(queueResponse.status)?queueResponse.status:503,origin);
+      return jsonResponse({ok:false,error:queueError?.error||"排队服务暂时未能回应，请稍后再试。"},[409,410,429].includes(queueResponse.status)?queueResponse.status:503,origin,env);
     }
     const admission = JSON.parse(queueBody);
     if (!admission.ok || !admission.claimToken) throw new Error("这次等候已失效，请重新试一次。");
     queueLease = {ticket:queueTicket,claimToken:admission.claimToken};
 
     const transcript = normalizeYuanbaiAsrTranscript(
-      await measure("asr_ms", () => transcribe(audioBase64, body.mime_type, env.DASHSCOPE_API_KEY)),
+      typedText || await measure("asr_ms", () => transcribe(audioBase64, body.mime_type, env.DASHSCOPE_API_KEY)),
     );
-    if (!transcript) return jsonResponse({ ok: false, error: "我没有听清，请靠近麦克风再说一次。" }, 422, origin);
+    if (!transcript) return jsonResponse({ ok: false, error: "我没有听清，请靠近麦克风再说一次。" }, 422, origin, env);
 
     const chatResult = await measure("dialogue_ms", () => chat(
       transcript,
@@ -540,7 +546,7 @@ export async function onRequestPost({ request, env }) {
     const answer = chatResult.answer;
     if (!answer) throw new Error("对话生成没有返回内容");
 
-    const audioBase64Result = await measure("tts_ms", () => synthesize(
+    const audioBase64Result = typedText ? "" : await measure("tts_ms", () => synthesize(
       answer,
       env.DASHSCOPE_API_KEY,
       env.YUANBAI_TTS_MODEL,
@@ -559,11 +565,13 @@ export async function onRequestPost({ request, env }) {
         web_search_enabled: env.DEEPSEEK_WEB_SEARCH_ENABLED === undefined
           ? true
           : envBoolean(env.DEEPSEEK_WEB_SEARCH_ENABLED),
+        text_only: Boolean(typedText),
         audio_base64: audioBase64Result,
         audio_mime_type: "audio/mpeg",
       },
       200,
       origin,
+      env,
     );
   } catch (error) {
     // Keep provider diagnostics without logging prompts, audio, API keys or answers.
@@ -575,7 +583,7 @@ export async function onRequestPost({ request, env }) {
       request_id: error?.requestId || null,
       error_name: error?.name || "Error",
     });
-    return jsonResponse({ ok: false, error: error?.message || "元白暂时没有回答成功，请再试一次。" }, error?.name === "TimeoutError" ? 504 : 502, origin);
+    return jsonResponse({ ok: false, error: error?.message || "元白暂时没有回答成功，请再试一次。" }, error?.name === "TimeoutError" ? 504 : 502, origin, env);
   } finally {
     if (queueLease) {
       try {
@@ -590,3 +598,4 @@ export async function onRequestPost({ request, env }) {
     }
   }
 }
+

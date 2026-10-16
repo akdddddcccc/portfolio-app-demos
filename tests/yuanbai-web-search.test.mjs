@@ -45,7 +45,8 @@ test("public person reaches search and generation; classmates stay local",async 
   assert.match(calls[2].body.messages[1].content,/不提无关班级/);
   assert.equal(answer.webSources[0].url,"https://profiles.stanford.edu/fei-fei-li");
   const student=await chat("你知道何任选吗",[],"test-key",undefined,undefined,{enabled:true});
-  assert.match(student.answer,/26级1班/);
+  assert.match(student.answer,/个人信息/);
+  assert.doesNotMatch(student.answer,/26级1班/);
   assert.equal(calls.length,3);
 });
 
@@ -62,7 +63,7 @@ test('口语人物问法触发搜索，缺失学院证据后才查全网',async 
     assert.doesNotMatch(body.messages[1].content,/本届与普通同学的未来侧写|学生名单合成测试资料/);
     return Response.json({choices:[{message:{content:'深泽直人的设计介绍。'}}]});
   });
-  const result=await chat('你认不认识深泽直人',[],'key',undefined,undefined,{enabled:true});
+  const result=await chat('你认不认识深泽直人这个设计师',[],'key',undefined,undefined,{enabled:true});
   assert.equal(calls.length,3);
   assert.match(calls[0].messages[0].content[0].text,/site:design.bnu.edu.cn/);
   assert.doesNotMatch(calls[1].messages[0].content[0].text,/site:design.bnu.edu.cn/);
@@ -95,7 +96,7 @@ test('原研哉同音识别直接命中核验语料，不纠正用户也不归�
   assert.deepEqual(result.researchStages,[{stage:'corpus',status:'hit'}]);
 });
 
-test('三个班主任直接命中，老师介绍不走学生姓名兜底',async t=>{
+test('不提供班级关系，但保留教师公开研究',async t=>{
   const calls=[];
   t.mock.method(globalThis,'fetch',async(url,options)=>{
     const body=JSON.parse(options.body);calls.push(body);
@@ -103,11 +104,11 @@ test('三个班主任直接命中，老师介绍不走学生姓名兜底',async 
     return Response.json({choices:[{message:{content:'这位老师有自己的专业研究方向。'}}]});
   });
   const all=await chat('我们三个班班主任分别是谁',[],'key');
-  assert.match(all.answer,/1班是詹震宇.*2班是刘亚明.*3班是徐腾飞/);
+  assert.match(all.answer,/联系学院老师/);
   assert.equal(calls.length,0);
   for(const [name,field,index] of [['詹震宇','视觉传达',1],['刘亚明','适老化',2],['徐腾飞','艺术史论',3]]){
     const role=await chat(`2026级${index}班班主任是谁`,[],'key');
-    assert.match(role.answer,new RegExp(name));
+    assert.match(role.answer,/联系学院老师/);
     await chat(`你认不认识${name}老师`,[],'key');
     assert.match(calls.at(-1).messages[1].content,new RegExp(field));
   }
@@ -121,11 +122,11 @@ test('两轮搜索没有证据时禁止模型编造校园人物或私交',async 
     calls.push(JSON.parse(options.body));
     return Response.json({content:[]});
   });
-  const result=await chat('你认不认识杉本博司。',[],'key');
+  const result=await chat('你认不认识杉本博司老师。',[],'key');
   assert.equal(calls.length,2);
   assert.match(calls[0].messages[0].content[0].text,/杉本博司/);
   assert.deepEqual(result.researchStages.map(s=>s.stage),['corpus','school','web']);
-  assert.doesNotMatch(result.answer,/班|老师|项目里|我认得/);
+  assert.doesNotMatch(result.answer,/分班|项目里|我认得/);
 });
 
 test('原生搜索只有链接时读取可信正文，禁止抓取任意地址',async t=>{
@@ -156,7 +157,7 @@ test('学院官网有对应人物证据就停止继续全网；搜索故障不�
       }
       return Response.json({choices:[{message:{content:'深泽直人谈设计方法。'}}]});
     });
-    const result=await chat('你认不认识深泽直人',[],'key',undefined,undefined,{enabled:true});
+    const result=await chat('你认不认识深泽直人这个设计师',[],'key',undefined,undefined,{enabled:true});
     assert.equal(calls.length,failSchool?3:2);assert.equal(result.webSources.length,1);
     t.mock.restoreAll();
   }
@@ -224,3 +225,4 @@ test("uses the DeepSeek native web-search wire format", { concurrency: false }, 
     globalThis.fetch = originalFetch;
   }
 });
+

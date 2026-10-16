@@ -1,6 +1,6 @@
 // 浏览器只访问同域 HTTPS；成绩保存在用户 VPS，地址不是管理密钥。
 const UPSTREAM = "http://123.56.162.88/yuanbai-game/api/yuanbai/game/";
-export async function proxyGame({request}, route, fetcher = fetch) {
+export async function proxyGame({request, env = {}}, route, fetcher = fetch) {
   const url = new URL(request.url);
   const method = route === "leaderboard" ? "GET" : "POST";
   const json = (body, status) => new Response(JSON.stringify(body), {status, headers: {
@@ -16,7 +16,8 @@ export async function proxyGame({request}, route, fetcher = fetch) {
   };
   if (request.method !== method) return json({error:"请求方式不支持"},405);
   const origin = request.headers.get("Origin");
-  if (origin && origin !== url.origin) return json({error:"请从游戏页面内提交。"},403);
+  const academyOrigins = String(env.YUANBAI_ALLOWED_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
+  if (origin && origin !== url.origin && !academyOrigins.includes(origin)) return json({error:"请从游戏页面内提交。"},403);
   const headers = {"Origin":"https://apps-demo.muyang23333.top"};
   const auth = request.headers.get("Authorization");
   if (auth) {
@@ -46,3 +47,4 @@ export async function proxyGame({request}, route, fetcher = fetch) {
     return json(data,result.status);
   } catch { return json({error:"成绩服务暂时不可用，请稍后重试。"},503); }
 }
+

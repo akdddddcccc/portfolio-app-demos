@@ -22,7 +22,7 @@ test("successful speech releases its lease before returning audio and records pr
     method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       audio_base64:'cHJpdmF0ZQ==',voice_queue_ticket:'12345678-1234-1234-1234-123456789abc',
     }),
-  }),env:{DASHSCOPE_API_KEY:'private-api-key',DEEPSEEK_API_KEY:'private-api-key'}});
+  }),env:{YUANBAI_PUBLIC_TTS_MODEL:'test-model',YUANBAI_PUBLIC_TTS_VOICE_ID:'test-female',DASHSCOPE_API_KEY:'private-api-key',DEEPSEEK_API_KEY:'private-api-key'}});
   assert.equal(response.status,200);
   assert.equal((await response.json()).audio_base64,'AQID');
   assert.deepEqual(actions,['complete','release']);
@@ -62,7 +62,7 @@ test("rejects audio that would exceed the EdgeOne request-body budget before cal
   });
   const response = await onRequestPost({
     request,
-    env: { DASHSCOPE_API_KEY: "test-key", DEEPSEEK_API_KEY: "test-key" },
+    env: { YUANBAI_PUBLIC_TTS_MODEL:'test-model',YUANBAI_PUBLIC_TTS_VOICE_ID:'test-female', DASHSCOPE_API_KEY: "test-key", DEEPSEEK_API_KEY: "test-key" },
   });
 
   assert.equal(response.status, 413);
@@ -72,7 +72,7 @@ test("rejects audio that would exceed the EdgeOne request-body budget before cal
 test("refuses speech generation without a server-issued queue ticket",async()=>{
   const response=await onRequestPost({request:new Request("https://example.test/api/yuanbai/chat",{
     method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({audio_base64:"dGVzdA==",mime_type:"audio/webm"}),
-  }),env:{DASHSCOPE_API_KEY:"test-key",DEEPSEEK_API_KEY:"test-key"}});
+  }),env:{YUANBAI_PUBLIC_TTS_MODEL:'test-model',YUANBAI_PUBLIC_TTS_VOICE_ID:'test-female',DASHSCOPE_API_KEY:"test-key",DEEPSEEK_API_KEY:"test-key"}});
   assert.equal(response.status,429);
   assert.match((await response.json()).error,/等候队列/u);
 });
@@ -93,7 +93,7 @@ test("provider failure completes and releases the admission lease", async t => {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ audio_base64: "dGVzdA==", mime_type: "audio/webm", voice_queue_ticket: ticket }),
     }),
-    env: { DASHSCOPE_API_KEY: "test-key", DEEPSEEK_API_KEY: "test-key" },
+    env: { YUANBAI_PUBLIC_TTS_MODEL:'test-model',YUANBAI_PUBLIC_TTS_VOICE_ID:'test-female', DASHSCOPE_API_KEY: "test-key", DEEPSEEK_API_KEY: "test-key" },
   });
   assert.equal(response.status, 502);
   assert.equal(calls[0].action, "claim");
@@ -133,7 +133,7 @@ test("TTS rate limit logs its stage and provider request ID without private inpu
         voice_queue_ticket: "12345678-1234-1234-1234-123456789abc",
       }),
     }),
-    env: { DASHSCOPE_API_KEY: "private-test-key", DEEPSEEK_API_KEY: "private-test-key" },
+    env: { YUANBAI_PUBLIC_TTS_MODEL:'test-model',YUANBAI_PUBLIC_TTS_VOICE_ID:'test-female', DASHSCOPE_API_KEY: "private-test-key", DEEPSEEK_API_KEY: "private-test-key" },
   });
 
   assert.equal(response.status, 502);
@@ -146,3 +146,12 @@ test("TTS rate limit logs its stage and provider request ID without private inpu
   }]]);
   assert.doesNotMatch(JSON.stringify(logs), /private-test-key|server-only-token|QUJD|你好/u);
 });
+
+
+ test('public edition cannot fall back to legacy dean voice', async()=>{
+ const {publicVoiceConfig}=await import('../edge-functions/api/yuanbai/chat.js');
+ assert.equal(publicVoiceConfig({YUANBAI_TTS_VOICE_ID:'old-voice'}),null);
+ assert.equal(publicVoiceConfig({YUANBAI_PUBLIC_TTS_MODEL:'model'}),null);
+ assert.equal(publicVoiceConfig({YUANBAI_PUBLIC_TTS_MODEL:'model',YUANBAI_PUBLIC_TTS_VOICE_ID:'qwen-audio-3.1-tts-flash-bailian-99b47d2c8e7a459d9e49d67ab2d9033d'}),null);
+ assert.deepEqual(publicVoiceConfig({YUANBAI_PUBLIC_TTS_MODEL:'model',YUANBAI_PUBLIC_TTS_VOICE_ID:'female'}),{model:'model',voice:'female'});
+ });

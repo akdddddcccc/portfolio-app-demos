@@ -355,7 +355,7 @@ export async function chat(transcript, history, apiKey, apiBase, model, searchOp
   }
   let webSources = [];
   let webSearchAttempted = false;
-  const researchStages = [{stage:'corpus',status:personContext?'hit':'miss'}];
+  const researchStages = [{stage:'corpus',status:curatedContext?'hit':'miss'}];
   const localAnswerSufficient = personContext && personSubject(transcript)
     && /认识|知道|听说|介绍|是谁|研究什么|研究领域|研究方向|擅长什么|主要做什么/u.test(transcript)
     && !SEARCH_CUES.some(cue=>transcript.includes(cue)) && !CURRENT_INFO_PATTERN.test(transcript);

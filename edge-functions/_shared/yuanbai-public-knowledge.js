@@ -271,7 +271,7 @@ export function buildCuratedKnowledgeContext(query, limit = 6) {
   const selected = ranked.filter((item) => item.score > 0).slice(0, limit);
   if (!selected.length) selected.push(...ranked.filter(({ entry }) => ["school-overview", "yuanbai-history"].includes(entry.id)));
   return selected.map(({ entry }) => (
-    `[${entry.title}]\n${entry.content}`
+    `[${entry.title}]\n${entry.content}\n来源：${entry.source || "未记录"}\n核验时间：${entry.verifiedAt || "见来源记录；并非实时核验"}`
   )).join("\n\n");
 }
 
@@ -280,7 +280,7 @@ export function getCuratedPersonContext(query) {
   if (!name) return '';
   return ENTRIES.filter(entry=>!entry.id.startsWith('student-') && entry.id!=='synthetic-roster-boundary'
     && entry.tags.split(/\s+/u).includes(name))
-    .map(entry=>`[${entry.title}]\n${entry.content}`).join('\n\n');
+    .map(entry=>`[${entry.title}]\n${entry.content}\n来源：${entry.source || "未记录"}\n核验时间：${entry.verifiedAt || "见来源记录；并非实时核验"}`).join('\n\n');
 }
 
 

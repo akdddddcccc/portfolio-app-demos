@@ -17,8 +17,14 @@ const DEEPSEEK_SEARCH_TIMEOUT_MS = 12_000;
 const MAX_AUDIO_BASE64_LENGTH = 800_000;
 const MAX_HISTORY_MESSAGES = 8;
 const TTS_SPEECH_RATE = 0.95;
-const DEFAULT_TTS_MODEL = "qwen-audio-3.1-tts-flash";
-const DEFAULT_TTS_VOICE_ID = "qwen-audio-3.1-tts-flash-bailian-99b47d2c8e7a459d9e49d67ab2d9033d";
+
+// Public edition deliberately ignores legacy TTS settings, which may reference the dean.
+export function publicVoiceConfig(env = {}) {
+  const model = String(env.YUANBAI_PUBLIC_TTS_MODEL || "").trim();
+  const voice = String(env.YUANBAI_PUBLIC_TTS_VOICE_ID || "").trim();
+  if (!model || !voice || voice === "qwen-audio-3.1-tts-flash-bailian-99b47d2c8e7a459d9e49d67ab2d9033d") return null;
+  return {model, voice};
+}
 const VOICE_QUEUE_BASE = "http://123.56.162.88/yuanbai-queue/api/yuanbai/voice-queue/";
 const ALLOWED_ORIGINS = new Set([
   "https://apps-demo.muyang23333.top",
@@ -435,10 +441,10 @@ async function synthesize(text, apiKey, model, voice) {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: model || DEFAULT_TTS_MODEL,
+        model,
         input: {
           text,
-          voice: voice || DEFAULT_TTS_VOICE_ID,
+          voice,
           format: "mp3",
           sample_rate: 22050,
           // 元白保持舒缓、有停顿的表达；只改语速，不改变已选定的音色。
@@ -546,11 +552,12 @@ export async function onRequestPost({ request, env }) {
     const answer = chatResult.answer;
     if (!answer) throw new Error("对话生成没有返回内容");
 
-    const audioBase64Result = typedText ? "" : await measure("tts_ms", () => synthesize(
+    const publicVoice = publicVoiceConfig(env);
+    const audioBase64Result = typedText || !publicVoice ? "" : await measure("tts_ms", () => synthesize(
       answer,
       env.DASHSCOPE_API_KEY,
-      env.YUANBAI_TTS_MODEL,
-      env.YUANBAI_TTS_VOICE_ID,
+      publicVoice.model,
+      publicVoice.voice,
     ));
 
     answered = true;
@@ -565,7 +572,8 @@ export async function onRequestPost({ request, env }) {
         web_search_enabled: env.DEEPSEEK_WEB_SEARCH_ENABLED === undefined
           ? true
           : envBoolean(env.DEEPSEEK_WEB_SEARCH_ENABLED),
-        text_only: Boolean(typedText),
+        text_only: Boolean(typedText || !publicVoice),
+        voice_status: publicVoice ? "configured" : "not_configured",
         audio_base64: audioBase64Result,
         audio_mime_type: "audio/mpeg",
       },

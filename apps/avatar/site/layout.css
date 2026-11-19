@@ -1,0 +1,8 @@
+*{box-sizing:border-box}body{margin:0;background:#fafaf9;color:#222;font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}body.embedded{background:transparent}
+.contact-dialogue{display:block;width:min(100%,780px);margin:0 auto;padding:clamp(12px,3vw,32px)}
+.embedded .contact-dialogue{width:100%;max-width:none;margin:0;padding:0}
+.cc-chat{height:clamp(380px,80dvh,720px);padding:clamp(16px,3.4vw,28px);border-radius:16px;gap:0}
+.embedded .cc-chat{height:100dvh}.cc-chat header{align-items:baseline;min-width:0;border-bottom:1px solid #e9e8e5;padding-bottom:14px;gap:10px}.cc-chat header strong{font-size:17px}.cc-chat header small{margin-left:auto}
+.cc-log{padding:20px 0;scrollbar-gutter:stable}.cc-start{width:min(100%,560px);padding:10px 0;gap:12px}.cc-start h2{font-size:clamp(25px,4.2vw,36px);line-height:1.28;letter-spacing:-.025em;text-wrap:balance}.cc-start p{margin:0;color:#575754;line-height:1.65}.cc-start div{margin-top:4px;gap:8px}.cc-start button{padding:9px 13px;min-height:40px;line-height:1.4;text-align:start}.cc-chat>small{display:block;margin:4px 0 9px;line-height:1.55}
+.cc-chat form{align-items:center;padding:7px 8px;gap:6px}.cc-chat textarea{font-size:16px;line-height:1.5;min-height:38px}.cc-chat form button{min-height:42px;flex:none}.cc-log article{margin:0 0 18px}.cc-chat [role=alert]{font-size:14px;line-height:1.5;max-height:4.5em;overflow:auto}
+@media(max-width:520px){.cc-chat{padding:16px;border-radius:12px}.cc-log{padding:14px 0;scrollbar-gutter:auto}.cc-start{gap:9px}.cc-start button{min-height:40px}.cc-start div{gap:6px}.cc-chat header{padding-bottom:10px}.cc-chat>small{margin:2px 0 7px}}

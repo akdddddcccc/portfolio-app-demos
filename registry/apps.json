@@ -55,6 +55,19 @@
       },
       "embedQuery": "embed=portfolio",
       "portfolioProjectKey": "soft-sense"
+    },
+    {
+      "slug": "avatar",
+      "title": "沐阳的 AI 分身",
+      "repository": null,
+      "path": "apps/avatar",
+      "publicPath": "/avatar/",
+      "buildOutput": "dist",
+      "packageManager": "npm",
+      "defaultOrientation": "landscape",
+      "landscapeFrame": {"width": 1280, "height": 720},
+      "embedQuery": "embed=portfolio",
+      "portfolioProjectKey": "contact"
     }
   ]
 }

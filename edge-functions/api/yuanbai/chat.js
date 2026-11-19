@@ -444,6 +444,12 @@ export async function onRequestOptions({ request }) {
   return new Response(null, { status: 204, headers: corsHeaders(request.headers.get("Origin") || "") });
 }
 
+// A non-billable capability check for deployments and clients embedded on other sites.
+export function onRequestGet({request}) {
+  return jsonResponse({voice:preset.voice, format:"pcm", sample_rate:24000, protocol:"ndjson-v1"},
+    200, request.headers.get("Origin") || "");
+}
+
 export async function onRequestPost({ request, env }) {
   let queueLease;
   let answered = false;

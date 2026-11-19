@@ -3,7 +3,7 @@ import { chatWorkTarget } from "./target.js";
 
 export default {
   name: "ContactView", props: ["lang"],
-  data(){return {messages:[],draft:"",busy:false,error:"",mode:"loading",remaining:null,imageLive:false,imageRemaining:0,imageId:null,controller:new AbortController()};},
+  data(){return {messages:[],draft:"",busy:false,error:"",mode:"loading",remaining:null,imageLive:false,imageRemaining:0,imageId:null,pageRoute:"checking",routeCheck:null,hasBackup:false,controller:new AbortController()};},
   computed:{
     zh(){return this.lang==="zh";},
     seeds(){return this.zh?["看看陈沐阳的作品","介绍一下陈沐阳的设计经历","陈沐阳平时喜欢做什么？"]:["Show me Chen Muyang’s work","Tell me about Chen Muyang’s design background","What does Chen Muyang enjoy outside design?"];},
@@ -12,12 +12,20 @@ export default {
   mounted(){this.status();}, beforeUnmount(){this.controller.abort();},
   methods:{
     canSend(text){return !this.busy && !!text.trim() && (this.ready || !!chatWorkTarget(text,this.lang));},
-    async status(){try{const r=await fetch("/api/avatar/status",{cache:"no-store",signal:this.controller.signal});const v=await r.json();if(!r.ok||typeof v.live?.chat!=="boolean")throw Error(); this.mode=v.live.chat?"live":"demo";this.remaining=v.quota.chat.remaining;this.imageLive=v.live.image;this.imageRemaining=Math.min(v.quota.image.remaining,v.quota.image.globalRemaining);}catch{this.mode="offline";}},
+    async status(){try{const r=await fetch("/api/avatar/status",{cache:"no-store",signal:this.controller.signal});const v=await r.json();if(!r.ok||typeof v.live?.chat!=="boolean")throw Error(); this.mode=v.live.chat?"live":"demo";this.remaining=v.quota.chat.remaining;this.imageLive=v.live.image;this.imageRemaining=Math.min(v.quota.image.remaining,v.quota.image.globalRemaining);this.hasBackup=!!v.imageProviders?.qwen;if(this.imageLive)this.routeCheck??=this.checkRoute();else this.pageRoute="none";}catch{this.mode="offline";}},
+    async checkRoute(){
+      try{const r=await fetch("/api/avatar/status?check=image",{cache:"no-store",signal:AbortSignal.any([this.controller.signal,AbortSignal.timeout(12000)])});
+        const v=await r.json();if(!r.ok||!['standard','ipv4','qwen','none'].includes(v.pageRoute))throw Error();this.pageRoute=v.pageRoute;
+      }catch{if(!this.controller.signal.aborted)this.pageRoute=this.hasBackup?'qwen':'none';}
+    },
     scroll(){this.$nextTick(()=>{const n=this.$refs.log;if(n)n.scrollTop=n.scrollHeight;});},
     async draw(id,prompt){
       const msg=this.messages.find(m=>m.id===id);
-      try{const r=await fetch("/api/avatar/image",{method:"POST",headers:{"Content-Type":"application/json"},signal:this.controller.signal,body:JSON.stringify({requestId:id,confirm:true,prompt,lang:this.lang})});
+      try{await this.routeCheck;
+        if(this.pageRoute==='none')throw Error(this.zh?'本页没有可用的生图渠道。':'No image service is available.');
+        const r=await fetch("/api/avatar/image",{method:"POST",headers:{"Content-Type":"application/json"},signal:this.controller.signal,body:JSON.stringify({requestId:id,confirm:true,prompt,lang:this.lang,pageRoute:this.pageRoute})});
         const v=await r.json();if(!r.ok)throw Error(v.error||(this.zh?"未收到图片。":"No image returned."));
+        if(v.provider==='Qwen')this.pageRoute='qwen';
         msg.provider=v.provider==='Qwen'?(this.zh?'千问':'Qwen'):'OpenAI';if(v.model)msg.provider+=' · '+v.model;
         if(v.image?.startsWith("data:image/jpeg;base64,"))msg.image=v.image;
         else if(v.provider==='Qwen'&&/^https:\/\/(?:dashscope-result[-a-z0-9]*\.oss[-a-z0-9]+|dashscope-[0-9]{4}\.oss-accelerate)\.aliyuncs\.com\//.test(v.source)){
@@ -66,7 +74,7 @@ export default {
           <p v-if="busy" role="status">{{zh?'正在整理回答…':'Preparing a reply…'}}</p>
         </div>
         <p v-if="error" role="alert">{{error}}</p>
-        <small>{{imageLive?(zh?'找作品直接问；想画什么也可以直接说。':'Ask for existing work, or describe a new image.'):(zh?'可以问公开的设计经历和作品。':'Ask about published projects and design experience.')}} </small>
+        <small role="status">{{imageLive?(pageRoute==='checking'?(zh?'正在检测生图渠道…':'Checking image service…'):pageRoute==='none'?(zh?'生图暂不可用':'Image service unavailable'):(zh?'生图渠道：':'Image service: ')+(pageRoute==='qwen'?(zh?'千问（备用）':'Qwen (backup)'):'OpenAI')):(zh?'可以问公开的设计经历和作品。':'Ask about published projects and design experience.')}}</small>
         <form @submit.prevent="send()"><textarea v-model="draft" rows="1" maxlength="1000" :placeholder="zh?'聊聊作品，或描述想画的东西…':'Ask a question or describe an image…'" :aria-label="zh?'输入消息':'Message'" @keydown.enter="e=>{if(!e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();send();}}"></textarea><button :disabled="!canSend(draft)">{{zh?'发送':'Send'}}</button></form>
       </section>
     </section>`

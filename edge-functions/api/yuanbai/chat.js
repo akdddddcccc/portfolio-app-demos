@@ -39,6 +39,7 @@ function jsonResponse(data, status = 200, origin = "") {
     headers: {
       "Content-Type": "application/json; charset=UTF-8",
       "Cache-Control": "no-store",
+      "X-Yuanbai-Voice": preset.voice,
       ...corsHeaders(origin),
     },
   });
@@ -445,7 +446,7 @@ export async function onRequestOptions({ request }) {
 }
 
 // A non-billable capability check for deployments and clients embedded on other sites.
-export function onRequestGet({request}) {
+export async function onRequestGet({request}) {
   return jsonResponse({voice:preset.voice, format:"pcm", sample_rate:24000, protocol:"ndjson-v1"},
     200, request.headers.get("Origin") || "");
 }
@@ -486,6 +487,7 @@ export async function onRequestPost({ request, env }) {
 
   try {
     const body = await request.json();
+    if (body?.action === "capabilities") return onRequestGet({request});
     const audioBase64 = typeof body.audio_base64 === "string" ? body.audio_base64.trim() : "";
     if (!audioBase64) return jsonResponse({ ok: false, error: "没有收到录音。" }, 400, origin);
     if (audioBase64.length > MAX_AUDIO_BASE64_LENGTH) {

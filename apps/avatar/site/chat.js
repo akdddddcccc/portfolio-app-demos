@@ -18,7 +18,7 @@ export default {
       const msg=this.messages.find(m=>m.id===id);
       try{const r=await fetch("/api/avatar/image",{method:"POST",headers:{"Content-Type":"application/json"},signal:this.controller.signal,body:JSON.stringify({requestId:id,confirm:true,prompt,lang:this.lang})});
         const v=await r.json();if(!r.ok||!v.image?.startsWith("data:image/jpeg;base64,"))throw Error(v.error||(this.zh?"未收到 JPG 图片。":"No JPEG was returned."));
-        msg.image=v.image;msg.state="done";
+        msg.image=v.image;msg.provider=v.provider==='Qwen'?(this.zh?'千问':'Qwen'):'OpenAI';if(v.model)msg.provider+=' · '+v.model;msg.state="done";
       }catch(e){msg.state="failed";msg.problem=e.message;}
       // Refresh only the image counter. A late image must not change a newer chat turn.
       if(!this.controller.signal.aborted)try{const r=await fetch("/api/avatar/status",{cache:"no-store",signal:this.controller.signal});const v=await r.json();this.imageRemaining=Math.min(v.quota.image.remaining,v.quota.image.globalRemaining);}catch{}
@@ -36,7 +36,7 @@ export default {
       this.error="";this.draft="";this.busy=true;this.messages.push({role:"user",content:text});this.scroll();
       try{const r=await fetch("/api/avatar/chat",{method:"POST",headers:{"Content-Type":"application/json"},signal:this.controller.signal,body:JSON.stringify({message:text,lang:this.lang,history,requestId:this.imageId.id})});
         const v=await r.json();if(v.quota){this.remaining=v.quota.chat.remaining;this.imageRemaining=Math.min(v.quota.image.remaining,v.quota.image.globalRemaining);}if(!r.ok||(!v.text&&!v.imagePrompt)){if(v.code)this.imageId=null;throw Error(v.error||"");}
-        if(v.imagePrompt){const id=this.imageId.id;this.messages.push({id,role:"assistant",provider:"OpenAI",content:v.imagePrompt,state:"drawing"});this.imageRemaining=Math.max(0,this.imageRemaining-1);void this.draw(id,v.imagePrompt);}
+        if(v.imagePrompt){const id=this.imageId.id;this.messages.push({id,role:"assistant",content:v.imagePrompt,state:"drawing"});this.imageRemaining=Math.max(0,this.imageRemaining-1);void this.draw(id,v.imagePrompt);}
         else this.messages.push({role:"assistant",provider:v.provider,content:v.text,links:(v.links||[]).filter(l=>/^[a-z0-9-]+$/.test(l.slug))});
         this.imageId=null;}
       catch(e){this.messages.pop();if(!this.draft)this.draft=text;this.error=e.message|| (this.zh?"没有收到回答，请稍后再试。":"No reply. Please try again.");}

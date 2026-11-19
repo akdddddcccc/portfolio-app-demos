@@ -1,3 +1,4 @@
+import {finalTranscript, preset, speechPayload, streamingCompletion, streamReply} from "../../_shared/yuanbai-stream.js";
 import { YUANBAI_SYSTEM_PROMPT, buildCuratedKnowledgeContext, getCuratedPersonContext, getCuratedClassAdviserAnswer, getCuratedStudentNameAnswer, getCuratedStudentRosterFallback, hasCuratedStudentMatch } from "../../_shared/yuanbai-knowledge.js";
 import { personSubject, normalizePublicPersonQuery } from "../../_shared/yuanbai-person-query.js";
 import { timedRequest } from "../../_shared/yuanbai-request.js";
@@ -16,9 +17,6 @@ const DEEPSEEK_SEARCH_TIMEOUT_MS = 12_000;
 // the JSON wrapper around the base64-encoded compressed audio.
 const MAX_AUDIO_BASE64_LENGTH = 800_000;
 const MAX_HISTORY_MESSAGES = 8;
-const TTS_SPEECH_RATE = 0.95;
-const DEFAULT_TTS_MODEL = "qwen-audio-3.1-tts-flash";
-const DEFAULT_TTS_VOICE_ID = "qwen-audio-3.1-tts-flash-bailian-99b47d2c8e7a459d9e49d67ab2d9033d";
 const VOICE_QUEUE_BASE = "http://123.56.162.88/yuanbai-queue/api/yuanbai/voice-queue/";
 const ALLOWED_ORIGINS = new Set([
   "https://apps-demo.muyang23333.top",
@@ -306,29 +304,19 @@ function arrayBufferToBase64(buffer) {
   return btoa(binary);
 }
 
-async function transcribe(audioBase64, mimeType, apiKey) {
-  const { mime, format } = audioFormatFromMime(mimeType);
-  const data = await fetchJson(
-    `${DASHSCOPE_BASE}/api/v1/services/aigc/multimodal-generation/generation`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "X-DashScope-SSE": "disable",
-      },
-      body: JSON.stringify({
-        model: "fun-asr-realtime",
-        input: {
-          messages: [{ role: "user", content: [{ audio: `data:${mime};base64,${audioBase64}` }] }],
-        },
-        parameters: { format, vad_enabled: true },
-        resources: [],
-      }),
-    },
-    "语音识别",
-  );
-  return String(data.output?.text || data.output?.output?.text || "").trim();
+async function transcribe(audioBase64, mimeType, apiKey, env = {}) {
+  const {mime, format} = audioFormatFromMime(mimeType);
+  const {response, body} = await timedRequest(
+    (env.DASHSCOPE_BASE_URL || DASHSCOPE_BASE) + "/api/v1/services/aigc/multimodal-generation/generation",
+    {method:"POST", headers:{Authorization:"Bearer " + apiKey,"Content-Type":"application/json",
+      "X-DashScope-SSE":"enable", Accept:"text/event-stream"},
+     body:JSON.stringify({model:"fun-asr-realtime",input:{messages:[{role:"user",content:[
+       {audio:"data:" + mime + ";base64," + audioBase64}]}]},parameters:{format,vad_enabled:true},resources:[]})},
+    "语音识别", 25000);
+  try {
+    if (!response.ok) throw new Error("语音识别暂时不可用");
+    return finalTranscript(body);
+  } catch (error) { error.stage = "语音识别"; throw error; }
 }
 
 export async function chat(transcript, history, apiKey, apiBase, model, searchOptions = {}) {
@@ -396,13 +384,16 @@ export async function chat(transcript, history, apiKey, apiBase, model, searchOp
     webSearchStatus,
     webContext,
   ].filter(Boolean).join("\n\n");
-  const data = await fetchJson(
+  const complete = searchOptions.onText
+    ? (url, options) => streamingCompletion(url, options, searchOptions.onText, searchOptions.signal)
+    : fetchJson;
+  const data = await complete(
     `${String(apiBase || DEEPSEEK_BASE).replace(/\/$/, "")}/chat/completions`,
     {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: model || "deepseek-chat",
+        model: searchOptions.onText ? "deepseek-flash" : model || "deepseek-flash",
         messages: [
           { role: "system", content: YUANBAI_SYSTEM_PROMPT },
           { role: "system", content: knowledgeContext },
@@ -411,7 +402,7 @@ export async function chat(transcript, history, apiKey, apiBase, model, searchOp
         ],
         temperature: 0.68,
         max_tokens: 320,
-        stream: false,
+        stream: Boolean(searchOptions.onText),
       }),
     },
     "对话生成",
@@ -424,27 +415,11 @@ export async function chat(transcript, history, apiKey, apiBase, model, searchOp
   };
 }
 
-async function synthesize(text, apiKey, model, voice) {
+async function synthesize(text, apiKey, env = {}) {
   const data = await fetchJson(
-    `${DASHSCOPE_BASE}/api/v1/services/audio/tts/SpeechSynthesizer`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: model || DEFAULT_TTS_MODEL,
-        input: {
-          text,
-          voice: voice || DEFAULT_TTS_VOICE_ID,
-          format: "mp3",
-          sample_rate: 22050,
-          // 元白保持舒缓、有停顿的表达；只改语速，不改变已选定的音色。
-          speech_rate: TTS_SPEECH_RATE,
-          pitch_rate: 1.0,
-        },
-      }),
-    },
-    "语音合成",
-  );
+    (env.DASHSCOPE_BASE_URL || DASHSCOPE_BASE) + "/api/v1/services/audio/tts/SpeechSynthesizer",
+    {method:"POST", headers:{Authorization:"Bearer " + apiKey,"Content-Type":"application/json"},
+     body:JSON.stringify(speechPayload(text, "mp3"))}, "语音合成");
   const audioUrl = typeof data.output?.audio === "string" ? data.output.audio : data.output?.audio?.url;
   if (!audioUrl) {
     const error = new Error("语音合成没有返回音频地址");
@@ -480,6 +455,20 @@ export async function onRequestPost({ request, env }) {
     try { return await work(); }
     finally { timings[name] = Date.now() - start; }
   };
+  let streaming = false;
+  async function finishLease() {
+    if (queueLease) {
+      try {
+        // EdgeOne Makers currently does not expose Edge Function console logs.
+        // Send an allowlisted summary to our existing queue service's journal.
+        const diagnostics = {ok: answered, ...timings, total_ms: Date.now()-startedAt, ...failure};
+        await timedRequest(`${VOICE_QUEUE_BASE}complete`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...queueLease,diagnostics}),redirect:"error"}, "队列完成", 4000);
+        await timedRequest(`${VOICE_QUEUE_BASE}release`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket:queueLease.ticket}),redirect:"error"}, "队列释放", 4000);
+      } catch { console.warn("Yuanbai queue completion unavailable; lease will expire"); }
+      // Aggregate timings only: never log transcripts, audio, keys or tickets.
+      console.info("Yuanbai request timing", {ok: answered, ...timings, total_ms: Date.now() - startedAt});
+    }
+  }
   const origin = request.headers.get("Origin") || "";
   if (origin && !ALLOWED_ORIGINS.has(origin) && !/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)) {
     return jsonResponse({ ok: false, error: "当前来源不能调用元白服务。" }, 403, origin);
@@ -518,13 +507,14 @@ export async function onRequestPost({ request, env }) {
     );
     if (!transcript) return jsonResponse({ ok: false, error: "我没有听清，请靠近麦克风再说一次。" }, 422, origin);
 
-    const chatResult = await measure("dialogue_ms", () => chat(
+    const generate = (onText, signal) => measure("dialogue_ms", () => chat(
       transcript,
       cleanHistory(body.history),
       env.DEEPSEEK_API_KEY,
       env.DEEPSEEK_API_BASE,
       env.DEEPSEEK_MODEL,
       {
+        onText, signal,
         enabled: env.DEEPSEEK_WEB_SEARCH_ENABLED === undefined
           ? true
           : envBoolean(env.DEEPSEEK_WEB_SEARCH_ENABLED),
@@ -537,14 +527,22 @@ export async function onRequestPost({ request, env }) {
         timeoutMs: Math.min(12000, positiveInteger(env.DEEPSEEK_SEARCH_TIMEOUT_MS, 12000)),
       },
     ));
+    if (request.headers.get("Accept")?.includes("application/x-ndjson") ) {
+      const response = streamReply({transcript, generate, key:env.DASHSCOPE_API_KEY,
+        base:env.DASHSCOPE_BASE_URL || DASHSCOPE_BASE, headers:corsHeaders(origin, env), signal:request.signal,
+        metadata: r => ({web_sources:r.webSources, web_search_attempted:r.webSearchAttempted, research_stages:r.researchStages}),
+        complete: async ok => { answered = ok; await finishLease(); }});
+      streaming = true;
+      return response;
+    }
+    const chatResult = await generate();
     const answer = chatResult.answer;
     if (!answer) throw new Error("对话生成没有返回内容");
 
     const audioBase64Result = await measure("tts_ms", () => synthesize(
       answer,
       env.DASHSCOPE_API_KEY,
-      env.YUANBAI_TTS_MODEL,
-      env.YUANBAI_TTS_VOICE_ID,
+      env,
     ));
 
     answered = true;
@@ -577,16 +575,6 @@ export async function onRequestPost({ request, env }) {
     });
     return jsonResponse({ ok: false, error: error?.message || "元白暂时没有回答成功，请再试一次。" }, error?.name === "TimeoutError" ? 504 : 502, origin);
   } finally {
-    if (queueLease) {
-      try {
-        // EdgeOne Makers currently does not expose Edge Function console logs.
-        // Send an allowlisted summary to our existing queue service's journal.
-        const diagnostics = {ok: answered, ...timings, total_ms: Date.now()-startedAt, ...failure};
-        await timedRequest(`${VOICE_QUEUE_BASE}complete`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...queueLease,diagnostics}),redirect:"error"}, "队列完成", 4000);
-        await timedRequest(`${VOICE_QUEUE_BASE}release`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket:queueLease.ticket}),redirect:"error"}, "队列释放", 4000);
-      } catch { console.warn("Yuanbai queue completion unavailable; lease will expire"); }
-      // Aggregate timings only: never log transcripts, audio, keys or tickets.
-      console.info("Yuanbai request timing", {ok: answered, ...timings, total_ms: Date.now() - startedAt});
-    }
+    if (!streaming) await finishLease();
   }
 }

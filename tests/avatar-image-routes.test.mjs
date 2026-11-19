@@ -9,7 +9,7 @@ test('failed metadata checks cause exactly one Qwen generation; actual PNG is co
  const calls=[];const png=PNG.sync.write(new PNG({width:1024,height:1024}));
  const f=async(url,o)=>{
    calls.push([url,o.method]);if(url.includes('openai.com'))return dead();
-   if(url.includes('/generation')){assert.equal(o.headers.Authorization,'Bearer backup');return Response.json({output:{choices:[{message:{content:[{image:'https://dashscope-result-sh.oss-cn-shanghai.aliyuncs.com/a.png'}]}}]}});}
+   if(url.includes('/generation')){assert.equal(o.headers.Authorization,'Bearer backup');return Response.json({output:{choices:[{message:{content:[{image:'https://dashscope-0484.oss-accelerate.aliyuncs.com/a.png'}]}}]}});}
    assert.equal(o.headers,undefined);return new Response(png);
  };
  const r=await createProviders(env,f,dead).image(prompt);assert.equal(r.provider,'Qwen');assert.match(r.image,/^data:image\/jpeg;base64,\/9j\//);assert.equal(calls.filter(c=>c[1]==='POST').length,1);

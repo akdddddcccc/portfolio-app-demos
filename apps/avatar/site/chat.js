@@ -20,7 +20,7 @@ export default {
         const v=await r.json();if(!r.ok)throw Error(v.error||(this.zh?"未收到图片。":"No image returned."));
         msg.provider=v.provider==='Qwen'?(this.zh?'千问':'Qwen'):'OpenAI';if(v.model)msg.provider+=' · '+v.model;
         if(v.image?.startsWith("data:image/jpeg;base64,"))msg.image=v.image;
-        else if(v.provider==='Qwen'&&/^https:\/\/dashscope-result[-a-z0-9]*\.oss[-a-z0-9]+\.aliyuncs\.com\//.test(v.source)){
+        else if(v.provider==='Qwen'&&/^https:\/\/(?:dashscope-result[-a-z0-9]*\.oss[-a-z0-9]+|dashscope-[0-9]{4}\.oss-accelerate)\.aliyuncs\.com\//.test(v.source)){
           msg.source=v.source;
           const im=new Image();im.crossOrigin='anonymous';im.src=v.source;await im.decode();
           const canvas=document.createElement('canvas');canvas.width=im.naturalWidth;canvas.height=im.naturalHeight;

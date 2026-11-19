@@ -17,9 +17,18 @@ export default {
     async draw(id,prompt){
       const msg=this.messages.find(m=>m.id===id);
       try{const r=await fetch("/api/avatar/image",{method:"POST",headers:{"Content-Type":"application/json"},signal:this.controller.signal,body:JSON.stringify({requestId:id,confirm:true,prompt,lang:this.lang})});
-        const v=await r.json();if(!r.ok||!v.image?.startsWith("data:image/jpeg;base64,"))throw Error(v.error||(this.zh?"未收到 JPG 图片。":"No JPEG was returned."));
-        msg.image=v.image;msg.provider=v.provider==='Qwen'?(this.zh?'千问':'Qwen'):'OpenAI';if(v.model)msg.provider+=' · '+v.model;msg.state="done";
-      }catch(e){msg.state="failed";msg.problem=e.message;}
+        const v=await r.json();if(!r.ok)throw Error(v.error||(this.zh?"未收到图片。":"No image returned."));
+        msg.provider=v.provider==='Qwen'?(this.zh?'千问':'Qwen'):'OpenAI';if(v.model)msg.provider+=' · '+v.model;
+        if(v.image?.startsWith("data:image/jpeg;base64,"))msg.image=v.image;
+        else if(v.provider==='Qwen'&&/^https:\/\/dashscope-result[-a-z0-9]*\.oss[-a-z0-9]+\.aliyuncs\.com\//.test(v.source)){
+          msg.source=v.source;
+          const im=new Image();im.crossOrigin='anonymous';im.src=v.source;await im.decode();
+          const canvas=document.createElement('canvas');canvas.width=im.naturalWidth;canvas.height=im.naturalHeight;
+          if(!canvas.width||!canvas.height||canvas.width*canvas.height>4194304)throw Error('Unexpected image dimensions');
+          const ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(im,0,0);msg.image=canvas.toDataURL('image/jpeg',.9);
+        }else throw Error(this.zh?"未收到可用的图片。":"No usable image returned.");
+        msg.state="done";
+      }catch(e){msg.state="failed";msg.problem=msg.source?(this.zh?'图片已生成，可打开原图。':'Your image is ready. Open the original.') : e.message;}
       // Refresh only the image counter. A late image must not change a newer chat turn.
       if(!this.controller.signal.aborted)try{const r=await fetch("/api/avatar/status",{cache:"no-store",signal:this.controller.signal});const v=await r.json();this.imageRemaining=Math.min(v.quota.image.remaining,v.quota.image.globalRemaining);}catch{}
     },
@@ -53,7 +62,7 @@ export default {
             <figure v-if="m.state" class="cc-image-slot" :class="'cc-slot-'+m.state">
               <img v-if="m.image" :src="m.image" :alt="m.content">
               <figcaption v-else role="status"><span v-if="m.state==='drawing'" class="cc-aster" aria-hidden="true">✳</span><strong>{{m.state==='drawing'?(zh?'正在画…':'Drawing…'):(zh?'图片未生成':'Image unavailable')}}</strong><small>{{m.state==='drawing'?(zh?'可以继续聊，画好会出现在这里。':'Keep chatting. Your image will appear here.') : m.problem}}</small></figcaption>
-            </figure><p v-else>{{m.content}}</p><a v-if="m.target" :href="m.target.href" target="_blank" rel="noopener">{{m.target.title}}</a><a v-if="m.image" :href="m.image" download="muyang-image.jpg">{{zh?'保存 JPG':'Save JPG'}}</a><a v-for="l in m.links" :key="l.slug" :href="'https://muyang23333.top/#/'+lang+'/project/'+l.slug" target="_blank" rel="noopener">{{l.title}}</a></article>
+            </figure><p v-else>{{m.content}}</p><a v-if="m.source&&!m.image" :href="m.source" target="_blank" rel="noopener noreferrer">{{zh?'打开千问原图':'Open original image'}}</a><a v-if="m.target" :href="m.target.href" target="_blank" rel="noopener">{{m.target.title}}</a><a v-if="m.image" :href="m.image" download="muyang-image.jpg">{{zh?'保存 JPG':'Save JPG'}}</a><a v-for="l in m.links" :key="l.slug" :href="'https://muyang23333.top/#/'+lang+'/project/'+l.slug" target="_blank" rel="noopener">{{l.title}}</a></article>
           <p v-if="busy" role="status">{{zh?'正在整理回答…':'Preparing a reply…'}}</p>
         </div>
         <p v-if="error" role="alert">{{error}}</p>

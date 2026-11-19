@@ -35,7 +35,7 @@ export default {
       if(this.imageId?.prompt!==text)this.imageId={prompt:text,id:crypto.randomUUID()};
       this.error="";this.draft="";this.busy=true;this.messages.push({role:"user",content:text});this.scroll();
       try{const r=await fetch("/api/avatar/chat",{method:"POST",headers:{"Content-Type":"application/json"},signal:this.controller.signal,body:JSON.stringify({message:text,lang:this.lang,history,requestId:this.imageId.id})});
-        const v=await r.json();if(v.quota){this.remaining=v.quota.chat.remaining;this.imageRemaining=Math.min(v.quota.image.remaining,v.quota.image.globalRemaining);}if(!r.ok||(!v.text&&!v.imagePrompt))throw Error(v.error||"");
+        const v=await r.json();if(v.quota){this.remaining=v.quota.chat.remaining;this.imageRemaining=Math.min(v.quota.image.remaining,v.quota.image.globalRemaining);}if(!r.ok||(!v.text&&!v.imagePrompt)){if(v.code)this.imageId=null;throw Error(v.error||"");}
         if(v.imagePrompt){const id=this.imageId.id;this.messages.push({id,role:"assistant",provider:"OpenAI",content:v.imagePrompt,state:"drawing"});this.imageRemaining=Math.max(0,this.imageRemaining-1);void this.draw(id,v.imagePrompt);}
         else this.messages.push({role:"assistant",provider:v.provider,content:v.text,links:(v.links||[]).filter(l=>/^[a-z0-9-]+$/.test(l.slug))});
         this.imageId=null;}
